@@ -99,7 +99,7 @@ const userSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["Active", "Pending", "Blocked", "Deleted"],
+      enum: ["Active", "Pending", "Blocked", "Deactivate", "Deleted"],
       default: "Pending",
     },
 
@@ -107,6 +107,52 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0, // later compute based on fields filled
     },
+    // In your User model (userModel.js)
+    pendingEmail: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      validate: {
+        validator: function (v) {
+          // validate only if a pending email exists
+          if (!v) return true;
+          return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+        },
+        message: "Invalid email format for pending email",
+      },
+    },
+
+    emailChangeOtp: {
+      type: String,
+      minlength: [4, "OTP must be at least 4 characters"],
+      maxlength: [8, "OTP cannot exceed 8 characters"],
+      match: [/^[0-9]+$/, "OTP must contain only digits"],
+      trim: true,
+    },
+
+    emailChangeOtpExpiry: {
+      type: Date,
+      validate: {
+        validator: function (v) {
+          if (!v) return true; // allow null
+          return v > Date.now();
+        },
+        message: "OTP expiry must be a future date",
+      },
+    },
+
+    deactivation: {
+      isDeactivated: { type: Boolean, default: false },
+      reason: { type: String },
+      deactivateUntil: { type: Date }, // store reactivation date
+    },
+
+    deleteReason: {
+      reason: { type: String },
+      details: { type: String },
+      deletedAt: { type: Date },
+    },
+
     refreshTokens: {
       type: [String],
       default: [],

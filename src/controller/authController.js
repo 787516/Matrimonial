@@ -77,7 +77,7 @@ export const loginUser = async (req, res) => {
 
     const accessToken = generateAccessToken(user._id, user.role);
     const refreshToken = generateRefreshToken(user._id);
-      // ✅ Save refresh token in DB
+      // ✅ Save refresh token in DB 
     user.refreshTokens.push(refreshToken);
     await user.save();
 
