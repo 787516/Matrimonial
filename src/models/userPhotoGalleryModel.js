@@ -1,26 +1,27 @@
 import mongoose from "mongoose";
-import validator from "validator";
 
-const userPhotoGallerySchema = new mongoose.Schema(
+const gallerySchema = new mongoose.Schema(
   {
     userProfileId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "UserProfile", // FK to userProfileDetail table
+      ref: "UserProfileDetail",
       required: true,
     },
 
     imageUrl: {
       type: String,
       required: true,
-      validate: {
-        validator: (v) => validator.isURL(v),
-        message: "Invalid image URL format",
-      },
     },
 
     isProfilePhoto: {
       type: Boolean,
       default: false,
+    },
+
+    visibility: {
+      type: String,
+      enum: ["public", "premium", "hidden"],
+      default: "public",
     },
 
     uploadedAt: {
@@ -31,8 +32,11 @@ const userPhotoGallerySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-const UserPhotoGallery = mongoose.model(
-  "UserPhotoGallery",
-  userPhotoGallerySchema
-);
-export default UserPhotoGallery;
+export default mongoose.model("UserPhotoGallery", gallerySchema);
+
+
+// const UserPhotoGallery = mongoose.model(
+//   "UserPhotoGallery",
+//   userPhotoGallerySchema
+// );
+// export default UserPhotoGallery;

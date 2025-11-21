@@ -65,7 +65,7 @@ const userSchema = new mongoose.Schema(
       minlength: 6,
       select: false,
     },
-
+    
     gender: {
       type: String,
       enum: ["Male", "Female", "Other"],
@@ -82,6 +82,16 @@ const userSchema = new mongoose.Schema(
       required: true,
       enum: ["Single", "Divorced", "Widowed"],
     },
+    // To show small data on dashboard & match cards
+// age: { type: Number, min },   // auto-calc from DOB at pre-save
+
+// For quick search / match listing
+// city: { type: String , trim: true , required: true,minlength: [2, "City name too short"], maxlength: [100, "City name too long"] },
+// state: { type: String , trim: true , required: true, minlength: [2, "State name too short"], maxlength: [100, "State name too long"] },
+// country: { type: String , trim: true , required: true, minlength: [2, "Country name too short"], maxlength: [100, "Country name too long"] },
+
+// For contact visibility (plans)
+// contactVisible: { type: Boolean, default: false },
 
     // Verification & Security
     emailVerified: { type: Boolean, default: false },
@@ -153,10 +163,11 @@ const userSchema = new mongoose.Schema(
       deletedAt: { type: Date },
     },
 
-    refreshTokens: {
-      type: [String],
-      default: [],
-    },
+   refreshToken: {
+  type: String,
+  default: null,
+}
+
   },
   { timestamps: true }
 );

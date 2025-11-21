@@ -1,4 +1,8 @@
 import User from "../models/userModel.js";
+import UserProfileDetail from "../models/userProfileDetailModel.js";
+import UserPartnerPreference from "../models/userPartnerPreferenceModel.js";
+import UserPhotoGallery from "../models/userPhotoGalleryModel.js";
+import userSubscription from "../models/userSubscriptionModel.js";
 import PendingUser from "../models/pendingUserModel.js";
 import validator from "validator";
 import bcrypt from "bcryptjs";
@@ -6,6 +10,7 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt.js";
 import sendOtpEmail from "../utils/sendOtp.js";
+
 
 // REGISTER USER → create pending entry and send OTP
 export const registerUser = async (req, res) => {
@@ -62,30 +67,55 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// LOGIN
-export const loginUser = async (req, res) => {
-  try { 
-    const { email, password } = req.body;
+// 🔥 Helper: fetch full merged data for user
+const getFullUserBundle = async (userId) => {
+  const user = await User.findById(userId).select("-password -otp -otpExpiry");
 
-    const user = await User.findOne({ email }).select("+password");
-    if (!user) return res.status(404).json({ message: "User not found" });
+  const profile = await UserProfileDetail.findOne({ userId });
 
-    const isMatch = await user.validatePassword(password);
-    if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
+  const preferences = profile
+    ? await UserPartnerPreference.findOne({ userProfileId: profile._id })
+    : null;
 
-    if (user.status !== "Active") return res.status(403).json({ message: "Account not active" });
+  const gallery = profile
+    ? await UserPhotoGallery.find({ userProfileId: profile._id })
+    : [];
 
-    const accessToken = generateAccessToken(user._id, user.role);
-    const refreshToken = generateRefreshToken(user._id);
-      // ✅ Save refresh token in DB 
-    user.refreshTokens.push(refreshToken);
-    await user.save();
+  // const subscription = await SubscriptionModel.findOne({
+  //   userId,
+  //   isActive: true,
+  // }).select("-__v");
 
-    res.json({ message: "Login success", accessToken, refreshToken });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  //return { user, profile, preferences, gallery, subscription };
+  return { user, profile, preferences, gallery };
+
 };
+
+
+// LOGIN
+// export const loginUser = async (req, res) => {
+//   try { 
+//     const { email, password } = req.body;
+
+//     const user = await User.findOne({ email }).select("+password");
+//     if (!user) return res.status(404).json({ message: "User not found" });
+
+//     const isMatch = await user.validatePassword(password);
+//     if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
+
+//     if (user.status !== "Active") return res.status(403).json({ message: "Account not active" });
+
+//     const accessToken = generateAccessToken(user._id, user.role);
+//     const refreshToken = generateRefreshToken(user._id);
+//       // ✅ Save refresh token in DB 
+//     user.refreshTokens.push(refreshToken);
+//     await user.save();
+
+//     res.json({ message: "Login success", accessToken, refreshToken });
+//   } catch (e) {
+//     res.status(500).json({ error: e.message });
+//   }
+// };
 
 // SEND OTP (resend during registration)
 // export const sendOtp = async (req, res) => {
@@ -109,6 +139,71 @@ export const loginUser = async (req, res) => {
 //     res.status(500).json({ error: e.message });
 //   }
 // };
+
+// 🔥 FINAL LOGIN CONTROLLER (Merged Unified Schema)
+export const loginUser = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // 🔹 Step 1: Find user
+    const user = await User.findOne({ email }).select("+password");
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        message: "User not found" 
+      });
+    }
+
+    // 🔹 Step 2: Validate password
+    const isMatch = await user.validatePassword(password);
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid credentials",
+      });
+    }
+
+    // 🔹 Step 3: Check account status
+    if (user.status !== "Active") {
+      return res.status(403).json({
+        success: false,
+        message: "Account not active",
+      });
+    }
+
+    // 🔹 Step 4: Generate tokens
+    const accessToken = generateAccessToken(user._id, user.role);
+    const refreshToken = generateRefreshToken(user._id);
+
+    user.refreshToken = refreshToken;   // store only one
+    await user.save();
+
+    // 🔹 Step 5: Fetch merged user data
+    const bundle = await getFullUserBundle(user._id);
+
+    // 🔹 Step 6: Return unified response
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      data: {
+        auth: {
+          accessToken,
+          refreshToken,
+          tokenExp: jwt.decode(accessToken)?.exp * 1000,
+        },
+        ...bundle,
+      },
+    });
+
+  } catch (error) {
+    console.error("Login Error:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+      message: "Something went wrong during login",
+    });
+  }
+};
 
 // VERIFY OTP -> create permanent user
 export const verifyOtp = async (req, res) => {
@@ -213,31 +308,42 @@ export const resetPassword = async (req, res) => {
 // LOGOUT
 
 export const logoutUser = async (req, res) => {
-  //console.log("🔒 Logout request received");
+  console.log("🔒 Logout request received");
   try {
     const { refreshToken } = req.body;
 
-    if (!refreshToken)
+    if (!refreshToken) {
       return res.status(400).json({ message: "No refresh token provided" });
+    }
 
+    // Verify token signature
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-   // console.log("Decoded refresh token:", process.env.JWT_REFRESH_SECRET) ;
-    const user = await User.findById(decoded._id);
-    if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Remove token (trim just in case)
-    user.refreshTokens = user.refreshTokens.filter(
-      (token) => token.trim() !== refreshToken.trim()
-    );
+    // Find user
+    const user = await User.findById(decoded._id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check if refreshToken matches DB
+    if (user.refreshToken !== refreshToken) {
+      return res.status(403).json({ message: "Invalid refresh token" });
+    }
+
+    // Remove refresh token from user record
+    user.refreshToken = null;
     await user.save();
 
-    console.log(`✅ User ${user.email} logged out`);
-    res.json({ message: "Logged out successfully" });
+    return res.json({ message: "Logged out successfully" });
   } catch (error) {
-    console.error("❌ Logout Error:", error);
-    res.status(401).json({ message: "Invalid or expired refresh token", error: error.message });
+    console.error("Logout error:", error);
+    return res.status(401).json({
+      message: "Invalid or expired refresh token",
+      error: error.message,
+    });
   }
 };
+
 
 export const refreshAccessToken = async (req, res) => {
   try {

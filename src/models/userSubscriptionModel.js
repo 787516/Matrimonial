@@ -1,37 +1,35 @@
 import mongoose from "mongoose";
 
-const userSubscriptionSchema = new mongoose.Schema(
+const subscriptionSchema = new mongoose.Schema(
   {
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
+
     planId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "SubscriptionPlan",
+      type: String,
+      enum: ["FREE", "SILVER", "GOLD", "PLATINUM"],
       required: true,
     },
-    startDate: { type: Date, default: Date.now },
-    endDate: { type: Date },
-    status: {
-      type: String,
-      enum: ["Active", "Expired", "Pending", "Cancelled"],
-      default: "Pending",
-    },
-    paymentInfo: {
-      orderId: String,
-      paymentId: String,
-      signature: String,
-      amount: Number,
-      currency: String,
-    },
+
+    price: Number,
+    durationDays: Number,
+
+    // FEATURES
+    viewLimit: Number,
+    contactViewAllowed: Boolean,
+    chatAllowed: Boolean,
+    interestLimit: { type: String, enum: ["Limited", "Unlimited"] },
+    supportType: { type: String, enum: ["None", "Basic", "Advance"] },
+
+    // VALIDITY
+    startDate: Date,
+    endDate: Date,
+    isActive: { type: Boolean, default: true },
   },
   { timestamps: true }
 );
 
-const UserSubscription = mongoose.model(
-  "UserSubscription",
-  userSubscriptionSchema
-);
-export default UserSubscription;
+export default mongoose.model("userSubscription", subscriptionSchema);

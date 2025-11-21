@@ -17,6 +17,7 @@ const getSecretRoomId = (userId, targetUserId) => {
 /**
  * Initialize Socket.IO server
  */
+
 export const initializeSocket = (server) => {
   const io = new Server(server, {
     cors: {
@@ -26,82 +27,104 @@ export const initializeSocket = (server) => {
     },
   });
 
-  io.on("connection", (socket) => {
-    console.log(`⚡ User connected: ${socket.id}`);
+  // Track online users (by userId)
+  const onlineUsers = new Set();
 
-    // 🔹 User joins a chat room
+  io.on("connection", (socket) => {
+    console.log(`⚡ Socket connected: ${socket.id}`);
+
+    // Client should emit 'userOnline' with their userId after connecting
+    socket.on("userOnline", ({ userId }) => {
+      if (!userId) return;
+      socket.userId = userId;
+      onlineUsers.add(userId.toString());
+      // broadcast updated online users list
+      io.emit("getOnlineUsers", Array.from(onlineUsers));
+      console.log(`👤 User online: ${userId}`);
+    });
+
+    // Clean up on disconnect
+    socket.on("disconnect", () => {
+      if (socket.userId) {
+        onlineUsers.delete(socket.userId.toString());
+        io.emit("getOnlineUsers", Array.from(onlineUsers));
+        console.log(`❌ User disconnected: ${socket.userId}`);
+      } else {
+        console.log(`❌ Socket disconnected: ${socket.id}`);
+      }
+    });
+
+    // Join a chat room
     socket.on("joinChat", async ({ firstName, userId, targetUserId }) => {
       const roomId = getSecretRoomId(userId, targetUserId);
       socket.join(roomId);
-      console.log(`${firstName} joined Room: ${roomId}`);
+      console.log(`${firstName || userId} joined Room: ${roomId}`);
     });
 
-    // 🔹 Send a message event
-    socket.on(
-      "sendMessage",
-      async ({ firstName, lastName, userId, targetUserId, text }) => {
-        try {
-          const roomId = getSecretRoomId(userId, targetUserId);
+    // Send a message event
+socket.on("sendMessage", async (data) => {
+  try {
+    const {
+      senderId,
+      receiverId,
+      message, // frontend uses message
+      roomId: ignoredRoomId, // not used because we compute our own
+    } = data;
 
-          // Find or create chat room
-          let chatRoom = await ChatRoom.findOne({
-            participants: { $all: [userId, targetUserId] },
-          });
+    if (!senderId || !receiverId || !message) {
+      console.log("❌ Missing fields:", data);
+      return;
+    }
 
-          if (!chatRoom) {
-            chatRoom = await ChatRoom.create({
-              participants: [userId, targetUserId],
-            });
-          }
+    // Generate correct roomId
+    const roomId = getSecretRoomId(senderId, receiverId);
 
-          // Save message to DB
-          const message = await Message.create({
-            chatRoomId: chatRoom._id,
-            senderId: userId,
-            message: text,
-          });
+    // Find or create chat room
+    let chatRoom = await ChatRoom.findOne({
+      participants: { $all: [senderId, receiverId] },
+    });
 
-          // ✅ Log activity for receiver
-          const senderName = `${firstName} ${lastName}`;
-          await createActivity(
-            targetUserId,
-            userId,
-            "ChatMessageReceived",
-            `${senderName} sent you a message`,
-            message._id,
-            { chatRoomId: chatRoom._id }
-          );
+    if (!chatRoom) {
+      chatRoom = await ChatRoom.create({
+        participants: [senderId, receiverId],
+      });
+    }
+    // Save message in DB
+    const newMsg = await Message.create({
+      chatRoomId: chatRoom._id,
+      senderId,
+      receiverId,
+      message,
+    });
 
-          // Emit to both users in the room
-          io.to(roomId).emit("messageReceived", {
-            senderName,
-            senderId: userId,
-            text,
-            createdAt: message.createdAt,
-          });
+    const payload = {
+      _id: newMsg._id,
+      chatRoomId: newMsg.chatRoomId,
+      senderId: newMsg.senderId,
+      receiverId: newMsg.receiverId,
+      message: newMsg.message,
+      createdAt: newMsg.createdAt,
+    };
 
-          console.log(`💬 Message sent in room ${roomId}: ${text}`);
-        } catch (err) {
-          console.error("❌ Message error:", err);
-        }
-      }
-    );
+    // Emit to room
+    io.to(roomId).emit("messageReceived", payload);
 
-    // 🔹 Typing indicator (optional)
+    console.log("💬 Message saved & emitted:", payload);
+  } catch (err) {
+    console.error("❌ sendMessage ERROR:", err);
+  }
+});
+
+
+    // Typing indicator
     socket.on("typing", ({ userId, targetUserId }) => {
       const roomId = getSecretRoomId(userId, targetUserId);
       socket.to(roomId).emit("typing", { userId });
     });
 
-    // 🔹 Stop typing indicator
     socket.on("stopTyping", ({ userId, targetUserId }) => {
       const roomId = getSecretRoomId(userId, targetUserId);
       socket.to(roomId).emit("stopTyping", { userId });
-    });
-
-    // 🔹 Disconnect
-    socket.on("disconnect", () => {
-      console.log(`❌ User disconnected: ${socket.id}`);
     });
   });
 

@@ -1,60 +1,62 @@
 import mongoose from "mongoose";
-import validator from "validator";
 
-const userPartnerPreferenceSchema = new mongoose.Schema(
+const preferenceSchema = new mongoose.Schema(
   {
     userProfileId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "UserProfileDetail", // FK to UserProfileDetail
+      ref: "UserProfileDetail",
       required: true,
-      unique: true, // one preference per profile
+      unique: true,
     },
 
+    // BASIC
+    maritalStatus: [String],
     ageRange: {
-      min: { type: Number, min: 18, max: 80, required: true },
-      max: { type: Number, min: 18, max: 80, required: true },
+      min: Number,
+      max: Number,
     },
-
     heightRange: {
-      min: { type: Number, min: 100, max: 250 }, // cm
-      max: { type: Number, min: 100, max: 250 },
+      min: Number,
+      max: Number,
     },
 
-    religion: {
-      type: String,
-      trim: true,
-      maxlength: 50,
-    },
+    // RELIGION
+    religion: String,
+    caste: String,
+    motherTongue: String,
 
-    caste: {
-      type: String,
-      trim: true,
-      maxlength: 50,
-    },
+    // CAREER
+    education: String,
+    occupation: String,
+    salaryRange: String,
 
-    education: {
-      type: String,
-      trim: true,
-      maxlength: 100,
-    },
+    // LOCATION
+    country: String,
+    state: String,
+    city: String,
 
-    location: {
-      type: String,
-      trim: true,
-      maxlength: 100,
-    },
+    // LIFESTYLE
+    diet: String,
+    smoking: String,
+    drinking: String,
 
-    income: {
-      type: String,
-      trim: true,
-      maxlength: 30,
-    },
+    // HOROSCOPE
+    manglik: String,
+    rashi: String,
+    nadi: String,
+    gan: String,
+    charan: String,
+
+    partnerExpectation: { type: String, maxlength: 500 },
   },
   { timestamps: true }
 );
 
-const UserPartnerPreference = mongoose.model(
-  "UserPartnerPreference",
-  userPartnerPreferenceSchema
-);
-export default UserPartnerPreference;
+export default mongoose.model("UserPartnerPreference", preferenceSchema);
+
+
+// const UserPartnerPreference = mongoose.model(
+//   "UserPartnerPreference",
+//   userPartnerPreferenceSchema
+// );
+// export default UserPartnerPreference;

@@ -20,7 +20,7 @@ export const createChatRoom = async (req, res) => {
       });
     }
 
-    res.status(201).json({ message: "Chat room ready", chatRoom: room });
+    res.status(201).json({ message: "Chat room ready", data: room });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -42,9 +42,10 @@ export const getMessages = async (req, res) => {
 
     const messages = await Message.find({ chatRoomId: room._id })
       .sort({ createdAt: 1 })
-      .populate("senderId", "firstName lastName");
+      .populate("senderId", "firstName lastName")
+      .lean();
 
-    res.json({ messages });
+    res.json({ data: messages });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -59,7 +60,7 @@ export const getChatList = async (req, res) => {
 
     const rooms = await ChatRoom.find({
       participants: userId,
-    }).populate("participants", "firstName lastName email");
+    }).populate("participants", "firstName lastName email profilePic");
 
     const chatList = await Promise.all(
       rooms.map(async (room) => {
@@ -75,7 +76,7 @@ export const getChatList = async (req, res) => {
       })
     );
 
-    res.json({ chatList });
+    res.json({ data: chatList });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

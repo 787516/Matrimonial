@@ -11,15 +11,22 @@ import settingRoute from "./src/routes/settingRoutes.js";
 import chatRoutes from "./src/routes/chatRoutes.js";
 import subscriptionRoutes from "./src/routes/subscriptionRoutes.js";
 import notificationRoutes from "./src/routes/notificationRoutes.js"; // ✅ Import notification routes
-
 import { initializeSocket } from "./src/utils/socketServer.js";
 import http from "http";
+import cors from "cors";
+
+app.use(
+  cors({
+    origin: ["http://localhost:5173", "http://localhost:3000"],// allow your React app
+    credentials: true,                // allow cookies / headers
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], // allowed HTTP methods
+  })
+);
 
 app.use(express.json());
 const server = http.createServer(app);
 // Initialize Socket.IO server
 initializeSocket(server);
-
 
 // ✅ Use routes
 app.use("/api/auth", authRoute);
@@ -36,7 +43,7 @@ app.get('/', (req, res) => {
 
 connectDB()
   .then(() => {
-    app.listen(port, () => {
+    server.listen(port, () => {
       console.log(`Server is running on http://localhost:${port}`);
     });
     console.log("Connected to MongoDB successfully!");
