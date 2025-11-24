@@ -11,6 +11,21 @@ const gallerySchema = new mongoose.Schema(
     imageUrl: {
       type: String,
       required: true,
+      validate: {
+        validator: function (v) {
+          // Allow Cloudinary URLs, HTTP URLs
+          const isHttpUrl =
+            /^https?:\/\/[^\s]+$/i.test(v);
+
+          // Allow local system paths including Linux, macOS, Windows
+          const isLocalPath =
+            /^([a-zA-Z]:)?[\\\/]([^<>:"|?*\n]+[\\\/])*[^<>:"|?*\n]+$/.test(v);
+
+          return isHttpUrl || isLocalPath;
+        },
+        message: (props) =>
+          `${props.value} is not a valid image path or URL!`,
+      },
     },
 
     isProfilePhoto: {
@@ -33,10 +48,3 @@ const gallerySchema = new mongoose.Schema(
 );
 
 export default mongoose.model("UserPhotoGallery", gallerySchema);
-
-
-// const UserPhotoGallery = mongoose.model(
-//   "UserPhotoGallery",
-//   userPhotoGallerySchema
-// );
-// export default UserPhotoGallery;

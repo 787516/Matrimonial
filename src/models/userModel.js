@@ -33,6 +33,12 @@ const userSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
     },
+    middleName: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      required: true,
+    },
 
     email: {
       type: String,
@@ -68,8 +74,9 @@ const userSchema = new mongoose.Schema(
     
     gender: {
       type: String,
-      enum: ["Male", "Female", "Other"],
+      enum: ["male", "female", "other"],
       required: true,
+      lowercase: true,
     },
 
     dateOfBirth: {
@@ -86,9 +93,12 @@ const userSchema = new mongoose.Schema(
 // age: { type: Number, min },   // auto-calc from DOB at pre-save
 
 // For quick search / match listing
-// city: { type: String , trim: true , required: true,minlength: [2, "City name too short"], maxlength: [100, "City name too long"] },
-// state: { type: String , trim: true , required: true, minlength: [2, "State name too short"], maxlength: [100, "State name too long"] },
-// country: { type: String , trim: true , required: true, minlength: [2, "Country name too short"], maxlength: [100, "Country name too long"] },
+city: { type: String , trim: true , required: true,minlength: [2, "City name too short"], maxlength: [100, "City name too long"] },
+pincode: { type: String , trim: true , minlength: [2, "Pincode too short"], maxlength: [10, "Pincode too long"] },
+state: { type: String , trim: true , required: true, minlength: [2, "State name too short"], maxlength: [100, "State name too long"] },
+country: { type: String , trim: true , required: true, minlength: [2, "Country name too short"], maxlength: [100, "Country name too long"] },
+district: { type: String , trim: true , required: true, minlength: [2, "District name too short"], maxlength: [100, "District name too long"] },
+area: { type: String , trim: true , minlength: [2, "Area name too short"], maxlength: [100, "Area name too long"] },
 
 // For contact visibility (plans)
 // contactVisible: { type: Boolean, default: false },
@@ -156,6 +166,11 @@ const userSchema = new mongoose.Schema(
       reason: { type: String },
       deactivateUntil: { type: Date }, // store reactivation date
     },
+    registrationId: {
+  type: String,
+  unique: true,
+},
+
 
     deleteReason: {
       reason: { type: String },

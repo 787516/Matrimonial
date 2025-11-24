@@ -8,6 +8,7 @@ import {
   filterMatches,
   getPendingRequests,
   handleRequestAction,
+  getDashboardStats,
 } from "../controller/matchesController.js";
 
 const router = express.Router();
@@ -21,5 +22,8 @@ router.get("/filter", authMiddleware, filterMatches);
 router.get("/requests/pending", authMiddleware, getPendingRequests);
 // Accept / Reject / Block
 router.patch("/requests/:requestId", authMiddleware, handleRequestAction);
+
+router.get("/dashboard-stats", authMiddleware, getDashboardStats);
+
 
 export default router;

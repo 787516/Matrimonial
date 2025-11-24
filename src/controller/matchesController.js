@@ -14,11 +14,12 @@ export const getMatchFeed = async (req, res) => {
     if (!currentUser || !currentProfile) {
       return res.status(404).json({ message: "User profile not found" });
     }
-    
+     
     // 2️⃣ Find opposite gender users with same religion
+    const userGender = currentUser.gender.toLowerCase();
     const oppositeUsers = await User.find({
       _id: { $ne: userId },
-      gender: currentUser.gender === "Male" ? "Female" : "Male",
+      gender: userGender === "Male" ? "Female" : "Male",
     }).select("_id firstName lastName gender email");
 
     const oppositeUserIds = oppositeUsers.map((u) => u._id);
@@ -27,7 +28,7 @@ export const getMatchFeed = async (req, res) => {
     const suggestions = await UserProfileDetail.find({
       userId: { $in: oppositeUserIds },
       religion: currentProfile.religion,
-      isProfileVisible: true,
+      // isProfileVisible: true,
     })
       .populate("userId", "firstName lastName gender email")
       .limit(10);
@@ -240,5 +241,72 @@ export const getPendingRequests = async (req, res) => {
     res.json({ message: "Pending requests fetched", total: requests.length, requests });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+
+
+
+export const getDashboardStats = async (req, res) => {
+  console.log(" Fetching Dashboard Stats ");
+  try {
+    const userId = req.user._id;
+
+    // ------------------------------
+    // RECEIVED REQUESTS (others → you)
+    // ------------------------------
+    const receivedPending = await MatchRequest.countDocuments({
+      receiverId: userId,
+      status: "Pending",
+    });
+
+    const receivedAccepted = await MatchRequest.countDocuments({
+      receiverId: userId,
+      status: "Accepted",
+    });
+
+    const receivedRejected = await MatchRequest.countDocuments({
+      receiverId: userId,
+      status: "Rejected",
+    });
+
+    // ------------------------------
+    // SENT REQUESTS (you → others)
+    // ------------------------------
+    const sentPending = await MatchRequest.countDocuments({
+      senderId: userId,
+      status: "Pending",
+    });
+
+    const sentAccepted = await MatchRequest.countDocuments({
+      senderId: userId,
+      status: "Accepted",
+    });
+
+    const sentRejected = await MatchRequest.countDocuments({
+      senderId: userId,
+      status: "Rejected",
+    });
+
+    res.json({
+      message: "Dashboard stats fetched",
+
+      received: {
+        accepted: receivedAccepted,
+        pending: receivedPending,
+        rejected: receivedRejected,
+      },
+
+      sent: {
+        acceptedByOthers: sentAccepted,
+        pending: sentPending,
+        declinedByOthers: sentRejected,
+      },
+    });
+
+    console.log(" Dashboard stats sent ", res.data);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };

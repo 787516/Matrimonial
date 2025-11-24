@@ -3,6 +3,8 @@ import User from "../models/userModel.js";
 import UserPartnerPreference from "../models/userPartnerPreferenceModel.js";
 import UserPhotoGallery from "../models/userPhotoGalleryModel.js";
 import mongoose from "mongoose";
+import cloudinary from "../config/cloudinary.js";
+import fs from "fs";
 
 // ✅ Fetch complete user profile (joins User + Profile)
 export const getUserProfile = async (req, res) => {
@@ -65,6 +67,7 @@ function calculateProfileCompletion(profile) {
     profile.religion,
     profile.caste,
     profile.fatherOccupation,
+
   ];
 
   const filled = fields.filter((val) => val && val !== "").length;
@@ -91,23 +94,101 @@ export const upsertPartnerPreference = async (req, res) => {
 };
 
 // ✅ Add Photo
+// export const addPhoto = async (req, res) => {
+  
+//   try {
+//     const userProfileId = req.user._id;
+//     const { imageUrl, isProfilePhoto } = req.body;
+     
+//     const photo = await UserPhotoGallery.create({
+//       userProfileId,
+//       imageUrl,
+//       isProfilePhoto,
+//     });
+    
+//     res.status(201).json({ message: "Photo uploaded", photo });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// };
+
+
+// ✅ Add or Upload Photo with Cloudinary
 export const addPhoto = async (req, res) => {
   
   try {
     const userProfileId = req.user._id;
-    const { imageUrl, isProfilePhoto } = req.body;
-     
+
+    // Always safe – prevents undefined errors
+    const body = req.body || {};
+
+    let isProfilePhoto =
+      body.isProfilePhoto === "true" || body.isProfilePhoto === true;
+
+    let finalImageUrl = null;
+
+    // --------------------------------------
+    // CASE 1: FILE UPLOAD (multer + Cloudinary)
+    // --------------------------------------
+    if (req.file) {
+      const uploadResult = await cloudinary.uploader.upload(req.file.path, {
+        folder: "matrimony/gallery",
+        transformation: [{ width: 800, height: 800, crop: "limit" }],
+      });
+
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+
+      finalImageUrl = uploadResult.secure_url;
+    }
+
+    // --------------------------------------
+    // CASE 2: DIRECT URL PROVIDED (SAFE ACCESS)
+    // --------------------------------------
+    else if (body.imageUrl) {
+      finalImageUrl = body.imageUrl;
+    }
+
+    // --------------------------------------
+    // CASE 3: NOTHING PROVIDED
+    // --------------------------------------
+    else {
+      return res.status(400).json({
+        message: "No image file or URL provided",
+      });
+    }
+
+    // --------------------------------------
+    // If setting profile photo, remove previous ones
+    // --------------------------------------
+    if (isProfilePhoto) {
+      await UserPhotoGallery.updateMany(
+        { userProfileId, isProfilePhoto: true },
+        { isProfilePhoto: false }
+      );
+    }
+
+    // --------------------------------------
+    // SAVE IN DB
+    // --------------------------------------
     const photo = await UserPhotoGallery.create({
       userProfileId,
-      imageUrl,
+      imageUrl: finalImageUrl,
       isProfilePhoto,
     });
-    
-    res.status(201).json({ message: "Photo uploaded", photo });
+
+    res.status(201).json({
+      message: "Photo saved successfully",
+      photo,
+    });
+
   } catch (err) {
+    console.error("❌ Error adding photo:", err);
     res.status(500).json({ error: err.message });
   }
 };
+
 
 // ✅ Get Gallery
 export const getGallery = async (req, res) => {

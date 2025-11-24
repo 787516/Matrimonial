@@ -30,7 +30,7 @@ const profileSchema = new mongoose.Schema(
       ],
     },
 
-    diet: { type: String, enum: ["Veg", "Non-Veg", "Eggetarian", "Vegan"] },
+    diet: { type: String,  enum: ["Veg", "Non-Veg", "Eggetarian", "Vegan"] , csaseSensitive: false },
     smoking: { type: String, enum: ["No", "Occasionally", "Yes"] },
     drinking: { type: String, enum: ["No", "Occasionally", "Yes"] },
 
@@ -63,7 +63,7 @@ const profileSchema = new mongoose.Schema(
     // 🔵 ADDRESS
     currentAddress: String,
     nativeAddress: String,
-
+    
     // 🔵 HOROSCOPE DETAILS
     countryOfBirth: String,
     cityOfBirth: String,
@@ -89,6 +89,7 @@ const profileSchema = new mongoose.Schema(
 
     profileCompleted: { type: Number, default: 0 },
     isProfileVisible: { type: Boolean, default: true },
+
   },
   { timestamps: true }
 );

@@ -18,6 +18,7 @@ export const registerUser = async (req, res) => {
     const {
       firstName,
       lastName,
+      middleName,
       email,
       phone,
       password,
@@ -25,6 +26,12 @@ export const registerUser = async (req, res) => {
       gender,
       dateOfBirth,
       maritalStatus,
+      city,
+      state,
+      country,
+      district,
+      area,
+      pincode,
     } = req.body;
 
     // Basic validations
@@ -46,6 +53,7 @@ export const registerUser = async (req, res) => {
     const pendingPayload = {
       profileFor,
       firstName,
+      middleName,
       lastName,
       email,
       phone,
@@ -53,6 +61,12 @@ export const registerUser = async (req, res) => {
       gender,
       dateOfBirth,
       maritalStatus,
+      city,
+      state,
+      country,
+      district,
+      area,
+      pincode,
       otp,
       otpExpiry,
     };
@@ -205,43 +219,90 @@ export const loginUser = async (req, res) => {
   }
 };
 
-// VERIFY OTP -> create permanent user
+// VERIFY OTP -> create permanent user and forgot password
 export const verifyOtp = async (req, res) => {
   try {
-    const { email, otp } = req.body;
-    if (!email || !otp) return res.status(400).json({ message: "Email and OTP required" });
+    const { email, otp, purpose } = req.body;
 
-    const pending = await PendingUser.findOne({ email });
-    if (!pending) return res.status(404).json({ message: "No pending registration found" });
+    if (!email || !otp)
+      return res.status(400).json({ message: "Email and OTP required" });
 
-    if (!pending.otp || pending.otp !== otp || Date.now() > pending.otpExpiry) {
-      return res.status(400).json({ message: "Invalid or expired OTP" });
+    // If purpose = registration  → check PendingUser
+    if (purpose === "register") {
+      const pending = await PendingUser.findOne({ email });
+      if (!pending)
+        return res.status(404).json({ message: "No pending registration found" });
+
+      if (!pending.otp || pending.otp !== otp || Date.now() > pending.otpExpiry) {
+        return res.status(400).json({ message: "Invalid or expired OTP" });
+      }
+
+      // create user logic
+      let registrationId;
+      while (true) {
+        const tempId = generateRegistrationId();
+        const exists = await User.findOne({ registrationId: tempId });
+        if (!exists) {
+          registrationId = tempId;
+          break;
+        }
+      }
+
+      const userPayload = {
+        profileFor: pending.profileFor,
+        firstName: pending.firstName,
+        middleName: pending.middleName,
+        lastName: pending.lastName,
+        email: pending.email,
+        phone: pending.phone,
+        password: pending.passwordHash,
+        gender: pending.gender,
+        dateOfBirth: pending.dateOfBirth,
+        maritalStatus: pending.maritalStatus,
+        city: pending.city,
+        state: pending.state,
+        country: pending.country,
+        district: pending.district,
+        area: pending.area,
+        pincode: pending.pincode,
+        emailVerified: true,
+        registrationId,
+        status: "Active",
+      };
+
+      const newUser = await User.create(userPayload);
+      await PendingUser.deleteOne({ _id: pending._id });
+
+      return res.json({
+        message: "Email verified and account created",
+        userId: newUser._id,
+        registrationId: newUser.registrationId,
+      });
     }
 
-    // Create permanent user from pending data. passwordHash is already a bcrypt hash.
-    
-    const userPayload = {
-      profileFor: pending.profileFor,
-      firstName: pending.firstName,
-      lastName: pending.lastName,
-      email: pending.email,
-      phone: pending.phone,
-      password: pending.passwordHash, // userModel pre-save will detect bcrypt hash and skip re-hashing
-      gender: pending.gender,
-      dateOfBirth: pending.dateOfBirth,
-      maritalStatus: pending.maritalStatus,
-      emailVerified: true,
-      status: "Active",
-    };
+    // If purpose = forgot → check User collection
+    if (purpose === "forgot") {
+      const user = await User.findOne({ email }).select("+otp +otpExpiry");
 
-    const newUser = await User.create(userPayload);
-    await PendingUser.deleteOne({ _id: pending._id });
+      if (!user)
+        return res.status(404).json({ message: "User not found" });
 
-    res.json({ message: "Email verified and account created", userId: newUser._id });
+      if (!user.otp || user.otp !== otp || Date.now() > user.otpExpiry) {
+        return res.status(400).json({ message: "Invalid or expired OTP" });
+      }
+
+      return res.json({ message: "OTP verified", ok: true });
+    }
+
+    return res.status(400).json({ message: "Invalid purpose" });
+
   } catch (e) {
+    console.error(e);
     res.status(500).json({ error: e.message });
+    console.log("OTP verification error:", e);
   }
 };
+
 
 // Forgot PASSWORD 
 export const forgotPassword = async (req, res) => {
@@ -275,16 +336,16 @@ export const forgotPassword = async (req, res) => {
 // RESET PASSWORD
 export const resetPassword = async (req, res) => {
   try {
-    const { email, otp, newPassword } = req.body;
+    const { email, newPassword } = req.body;
 
     const user = await User.findOne({ email }).select("+password");
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
     // ✅ Verify OTP validity
-    if (user.otp !== otp) {
-      return res.status(400).json({ message: "Invalid OTP" });
-    }
+    // if (user.otp !== otp) {
+    //   return res.status(400).json({ message: "Invalid OTP" });
+    // }
 
     if (Date.now() > user.otpExpiry) {
       return res.status(400).json({ message: "OTP has expired" });
@@ -380,3 +441,13 @@ export const refreshAccessToken = async (req, res) => {
     res.status(401).json({ message: "Invalid or expired refresh token" });
   }
 };
+
+
+
+// ID Generator Helper
+// ------------------
+function generateRegistrationId() {
+  const prefix = "RTS";
+  const randomNum = Math.floor(100000 + Math.random() * 900000); // 6 digits
+  return `${prefix}${randomNum}`;
+}
