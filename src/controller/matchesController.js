@@ -5,6 +5,7 @@ import { createActivity } from "./notificationController.js"; // 👈 Import act
 
 export const getMatchFeed = async (req, res) => {
   try {
+
     const userId = req.user._id;
 
     // 1️⃣ Get current user's details
@@ -168,11 +169,6 @@ export const filterMatches = async (req, res) => {
 };
 
 
-
-
-
-
-
 // ✅ Accept / Reject / Block Interest or Chat Request
 export const handleRequestAction = async (req, res) => {
   try {
@@ -246,7 +242,6 @@ export const getPendingRequests = async (req, res) => {
 
 
 
-
 export const getDashboardStats = async (req, res) => {
   console.log(" Fetching Dashboard Stats ");
   try {
@@ -305,6 +300,74 @@ export const getDashboardStats = async (req, res) => {
     });
 
     console.log(" Dashboard stats sent ", res.data);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
+export const getDashboardRequestList = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    let { type, status } = req.query;
+
+    if (!type || !status) {
+      return res.status(400).json({ message: "type and status are required" });
+    }
+
+    let filter = { status };
+
+    // RECEIVED REQUESTS (others → you)
+    if (type === "received") {
+      filter.receiverId = userId;
+    }
+
+    // SENT REQUESTS (you → others)
+    else if (type === "sent") {
+      filter.senderId = userId;
+    }
+
+    else {
+      return res.status(400).json({ message: "Invalid type" });
+    }
+
+    // Find requests with user details
+    const requests = await MatchRequest.find(filter)
+      .populate("senderId", "firstName lastName email gender")
+      .populate("receiverId", "firstName lastName email gender");
+
+    // Format final user list
+    const formatted = [];
+
+    for (const reqItem of requests) {
+      const otherUser =
+        type === "received" ? reqItem.senderId : reqItem.receiverId;
+
+      // Fetch profile photo
+      const photo = await UserPhotoGallery.findOne({
+        userProfileId: otherUser._id,
+        isProfilePhoto: true
+      });
+
+      formatted.push({
+        _id: otherUser._id,
+        firstName: otherUser.firstName,
+        lastName: otherUser.lastName,
+        email: otherUser.email,
+        gender: otherUser.gender,
+        profilePhoto: photo ? photo.imageUrl : null,
+        status: reqItem.status,
+        requestId: reqItem._id,
+      });
+    }
+
+    res.json({
+      message: "List fetched",
+      total: formatted.length,
+      users: formatted,
+    });
 
   } catch (err) {
     res.status(500).json({ error: err.message });

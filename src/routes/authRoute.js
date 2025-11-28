@@ -4,6 +4,7 @@ import {
   loginUser,
   //sendOtp,
   verifyOtp,
+  setPassword,
   //resetPassword,
   logoutUser,
   refreshAccessToken,
@@ -19,6 +20,7 @@ router.post("/register", registerUser);
 router.post("/login", loginUser);
 //router.post("/send-otp", sendOtp);
 router.post("/verify-otp", verifyOtp);
+router.post("/set-password", setPassword);
 //router.post("/reset-password", resetPassword);
 router.post("/refresh-token", refreshAccessToken);
 //router.post("/logout", authMiddleware, logoutUser);

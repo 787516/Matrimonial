@@ -65,12 +65,18 @@ const userSchema = new mongoose.Schema(
       },
     },
 
-    password: {
+    // password: {
+    //   type: String,
+    //   required: true,
+    //   minlength: 6,
+    //   select: false,
+    // },
+        password: {
       type: String,
-      required: true,
-      minlength: 6,
+      required: false,
       select: false,
     },
+    
     
     gender: {
       type: String,
@@ -87,7 +93,7 @@ const userSchema = new mongoose.Schema(
     maritalStatus: {
       type: String,
       required: true,
-      enum: ["Single", "Divorced", "Widowed"],
+      //enum: ["Single", "Divorced", "Widowed"],
     },
     // To show small data on dashboard & match cards
 // age: { type: Number, min },   // auto-calc from DOB at pre-save
@@ -119,8 +125,8 @@ area: { type: String , trim: true , minlength: [2, "Area name too short"], maxle
 
     status: {
       type: String,
-      enum: ["Active", "Pending", "Blocked", "Deactivate", "Deleted"],
-      default: "Pending",
+      enum: ["PendingPassword","Active", "Pending", "Blocked", "Deactivate", "Deleted"],
+      default: "PendingPassword",
     },
 
     profileCompleted: {
@@ -200,18 +206,18 @@ userSchema.methods.generateAuthToken = function () {
 
 // ✅ Hash password before save
 userSchema.pre("save", async function (next) {
-  if (this.isModified("password")) {
-    // If password already appears to be a bcrypt hash, skip re-hashing.
-    // This allows creating the final user from a pending user where we stored a hashed password.
+  if (this.isModified("password") && this.password) {
     const alreadyHashed =
       typeof this.password === "string" &&
       /^\$2[aby]\$\d{2}\$/.test(this.password);
+
     if (!alreadyHashed) {
       this.password = await bcrypt.hash(this.password, 10);
     }
   }
   next();
 });
+
 
 // ✅ Compare passwords
 userSchema.methods.validatePassword = async function (plainPassword) {

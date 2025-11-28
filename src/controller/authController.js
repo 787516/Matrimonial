@@ -21,7 +21,7 @@ export const registerUser = async (req, res) => {
       middleName,
       email,
       phone,
-      password,
+     // password,
       profileFor,
       gender,
       dateOfBirth,
@@ -35,7 +35,8 @@ export const registerUser = async (req, res) => {
     } = req.body;
 
     // Basic validations
-    if (!email || !password) return res.status(400).json({ message: "Email and password required" });
+    if (!email) return res.status(400).json({ message: "Email is required" });
+   // if (!email || !password) return res.status(400).json({ message: "Email and password required" });
     if (!validator.isEmail(email)) return res.status(400).json({ message: "Invalid email" });
     if (phone && !validator.isMobilePhone(phone, "any")) return res.status(400).json({ message: "Invalid phone" });
 
@@ -48,7 +49,7 @@ export const registerUser = async (req, res) => {
     const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
 
     // Hash the password before storing in pending
-    const passwordHash = await bcrypt.hash(password, 10);
+    // const passwordHash = await bcrypt.hash(password, 10);
 
     const pendingPayload = {
       profileFor,
@@ -57,7 +58,7 @@ export const registerUser = async (req, res) => {
       lastName,
       email,
       phone,
-      passwordHash,
+   // passwordHash,
       gender,
       dateOfBirth,
       maritalStatus,
@@ -91,9 +92,10 @@ const getFullUserBundle = async (userId) => {
     ? await UserPartnerPreference.findOne({ userProfileId: profile._id })
     : null;
 
-  const gallery = profile
-    ? await UserPhotoGallery.find({ userProfileId: profile._id })
-    : [];
+  // const gallery = profile
+  //   ? await UserPhotoGallery.find({ userProfileId: profile._id })
+  //   : [];
+  const gallery = await UserPhotoGallery.find({ userProfileId: userId });
 
   // const subscription = await SubscriptionModel.findOne({
   //   userId,
@@ -255,7 +257,8 @@ export const verifyOtp = async (req, res) => {
         lastName: pending.lastName,
         email: pending.email,
         phone: pending.phone,
-        password: pending.passwordHash,
+       // password: pending.passwordHash,
+       password:null,
         gender: pending.gender,
         dateOfBirth: pending.dateOfBirth,
         maritalStatus: pending.maritalStatus,
@@ -267,11 +270,31 @@ export const verifyOtp = async (req, res) => {
         pincode: pending.pincode,
         emailVerified: true,
         registrationId,
-        status: "Active",
+        status: "PendingPassword",
       };
 
       const newUser = await User.create(userPayload);
       await PendingUser.deleteOne({ _id: pending._id });
+
+       // ==================================================
+      // ⭐ AUTO-CREATE USER PROFILE DETAIL —
+      //    FIXES "Profile not found" on all pages
+      // ==================================================
+      let profile = await UserProfileDetail.findOne({ userId: newUser._id });
+      if (!profile) {
+        profile = await UserProfileDetail.create({
+          userId: newUser._id,
+          gender: newUser.gender,
+          dateOfBirth: newUser.dateOfBirth,
+          city: newUser.city,
+          state: newUser.state,
+          country: newUser.country,
+          maritalStatus: newUser.maritalStatus,
+          profileFor: newUser.profileFor,
+          profileCreatedBy: "Self",
+          // default empty fields are allowed
+        });
+      }
 
       return res.json({
         message: "Email verified and account created",
@@ -302,7 +325,6 @@ export const verifyOtp = async (req, res) => {
     console.log("OTP verification error:", e);
   }
 };
-
 
 // Forgot PASSWORD 
 export const forgotPassword = async (req, res) => {
@@ -441,6 +463,36 @@ export const refreshAccessToken = async (req, res) => {
     res.status(401).json({ message: "Invalid or expired refresh token" });
   }
 };
+
+
+export const setPassword = async (req, res) => {
+  console.log("api heet")
+  try {
+    const { email, password } = req.body;
+
+    if (!password)
+      return res.status(400).json({ message: "Password required" });
+
+    const user = await User.findOne({ email }).select("+password");
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // Hash new password
+    const hash = await bcrypt.hash(password, 10);
+
+    user.password = hash;
+    user.status = "Active"; // CHANGED ↓
+    await user.save();
+
+    return res.json({ message: "Password set successfully. You can now login." });
+
+  } catch (err) {
+    console.log("setError", err)
+    return res.status(500).json({ error: err.message });
+    
+  }
+};
+
 
 
 

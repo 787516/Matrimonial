@@ -14,7 +14,7 @@ const pendingUserSchema = new mongoose.Schema(
       unique: true,
     },
     phone: { type: String, required: true, trim: true },
-    passwordHash: { type: String, required: true }, // bcrypt hash of password
+    // passwordHash: { type: String, required: true }, // bcrypt hash of password
     gender: { type: String },
     dateOfBirth: { type: Date },
     maritalStatus: { type: String },

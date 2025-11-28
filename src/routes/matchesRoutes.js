@@ -9,6 +9,7 @@ import {
   getPendingRequests,
   handleRequestAction,
   getDashboardStats,
+  getDashboardRequestList
 } from "../controller/matchesController.js";
 
 const router = express.Router();
@@ -24,6 +25,8 @@ router.get("/requests/pending", authMiddleware, getPendingRequests);
 router.patch("/requests/:requestId", authMiddleware, handleRequestAction);
 
 router.get("/dashboard-stats", authMiddleware, getDashboardStats);
+router.get("/Dashboard-Stat-List/requests", authMiddleware, getDashboardRequestList);
+
 
 
 export default router;
