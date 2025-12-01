@@ -2,43 +2,109 @@ import UserProfileDetail from "../models/userProfileDetailModel.js";
 import MatchRequest from "../models/matchRequestModel.js";
 import User from "../models/userModel.js"; // 👈 needed for gender info
 import { createActivity } from "./notificationController.js"; // 👈 Import activity logger
+import UserPartnerPreference from "../models/userPartnerPreferenceModel.js";
+import UserPhotoGallery from "../models/userPhotoGalleryModel.js";
+
 
 export const getMatchFeed = async (req, res) => {
   try {
-
     const userId = req.user._id;
 
-    // 1️⃣ Get current user's details
+    // 1️⃣ Load current user + profile
     const currentUser = await User.findById(userId);
     const currentProfile = await UserProfileDetail.findOne({ userId });
 
     if (!currentUser || !currentProfile) {
       return res.status(404).json({ message: "User profile not found" });
     }
-     
-    // 2️⃣ Find opposite gender users with same religion
-    const userGender = currentUser.gender.toLowerCase();
-    const oppositeUsers = await User.find({
-      _id: { $ne: userId },
-      gender: userGender === "Male" ? "Female" : "Male",
-    }).select("_id firstName lastName gender email");
 
-    const oppositeUserIds = oppositeUsers.map((u) => u._id);
+    const oppositeGender =
+      currentUser.gender?.toLowerCase() === "male" ? "female" : "male";
 
-    // 3️⃣ Find their profile details (based on religion, visibility, etc.)
-    const suggestions = await UserProfileDetail.find({
-      userId: { $in: oppositeUserIds },
-      religion: currentProfile.religion,
-      // isProfileVisible: true,
+    // 2️⃣ Fetch opposite gender profiles + JOIN: user + gallery
+    const allOppProfiles = await UserProfileDetail.find({
+      userId: { $ne: userId },
+      isProfileVisible: true,
     })
-      .populate("userId", "firstName lastName gender email")
-      .limit(10);
+      .populate("userId", "firstName lastName email gender")
+      .lean();
 
-    res.json({ message: "Match suggestions fetched", suggestions });
+    // 3️⃣ Filter by gender from userId (User model)
+    const genderMatched = allOppProfiles.filter(
+      (p) =>
+        p.userId?.gender?.toLowerCase() === oppositeGender.toLowerCase()
+    );
+
+    // 4️⃣ Attach profilePhoto (from profile OR gallery)
+    for (const p of genderMatched) {
+      const gallery = await UserPhotoGallery.find({
+        userProfileId: p._id,
+        isProfilePhoto: true,
+      });
+
+      p.profilePhoto =
+        p.profilePhoto || gallery?.[0]?.imageUrl || null;
+    }
+
+    // Continue your logic...
+    const used = new Set();
+    const equalsCI = (a, b) =>
+      a?.trim()?.toLowerCase() === b?.trim()?.toLowerCase();
+
+    let perfectMatches = [];
+    const preference = await UserPartnerPreference.findOne({
+      userProfileId: currentProfile._id,
+    });
+
+    if (preference) {
+      perfectMatches = genderMatched.filter((p) => {
+        return (
+          (!preference.religion ||
+            equalsCI(p.religion, preference.religion)) &&
+          (!preference.motherTongue ||
+            equalsCI(p.motherTongue, preference.motherTongue)) &&
+          (!preference.city || equalsCI(p.city, preference.city))
+        );
+      });
+
+      perfectMatches.forEach((m) => used.add(m._id.toString()));
+    }
+
+    const religionMatches = genderMatched.filter(
+      (p) =>
+        !used.has(p._id.toString()) &&
+        equalsCI(p.religion, currentProfile.religion)
+    );
+    religionMatches.forEach((m) => used.add(m._id.toString()));
+
+    const locationMatches = genderMatched.filter(
+      (p) =>
+        !used.has(p._id.toString()) &&
+        (equalsCI(p.city, currentProfile.city) ||
+          equalsCI(p.state, currentProfile.state))
+    );
+    locationMatches.forEach((m) =>
+      used.add(m._id.toString())
+    );
+
+    const fallbackMatches = genderMatched.filter(
+      (p) => !used.has(p._id.toString())
+    );
+
+    return res.status(200).json({
+      message: "Matches fetched successfully",
+      perfectMatches,
+      religionMatches,
+      locationMatches,
+      fallbackMatches,
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("MatchFeed Error:", err);
+    return res.status(500).json({ error: err.message });
   }
 };
+
+
 
 // 2️⃣ Send Interest
 export const sendInterest = async (req, res) => {
@@ -46,11 +112,20 @@ export const sendInterest = async (req, res) => {
     const { receiverId } = req.body;
     const senderId = req.user._id;
 
-    const existingRequest = await MatchRequest.findOne({ senderId, receiverId, type: "Interest" });
-    if (existingRequest) return res.status(400).json({ message: "Interest already sent" });
+    const existingRequest = await MatchRequest.findOne({
+      senderId,
+      receiverId,
+      type: "Interest",
+    });
+    if (existingRequest)
+      return res.status(400).json({ message: "Interest already sent" });
 
-    const newRequest = await MatchRequest.create({ senderId, receiverId, type: "Interest" });
-    
+    const newRequest = await MatchRequest.create({
+      senderId,
+      receiverId,
+      type: "Interest",
+    });
+
     // ✅ Log activity for receiver
     const senderName = req.user.firstName + " " + req.user.lastName;
     await createActivity(
@@ -62,7 +137,9 @@ export const sendInterest = async (req, res) => {
       { requestType: "Interest" }
     );
 
-    res.status(201).json({ message: "Interest sent successfully", request: newRequest });
+    res
+      .status(201)
+      .json({ message: "Interest sent successfully", request: newRequest });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -74,8 +151,12 @@ export const sendChatRequest = async (req, res) => {
     const { receiverId } = req.body;
     const senderId = req.user._id;
 
-    const chatReq = await MatchRequest.create({ senderId, receiverId, type: "Chat" });
-    
+    const chatReq = await MatchRequest.create({
+      senderId,
+      receiverId,
+      type: "Chat",
+    });
+
     // ✅ Log activity for receiver
     const senderName = req.user.firstName + " " + req.user.lastName;
     await createActivity(
@@ -95,12 +176,14 @@ export const sendChatRequest = async (req, res) => {
 
 // 4️⃣ View Profile
 export const viewProfile = async (req, res) => {
-  
   try {
     const { id } = req.params;
     const viewerId = req.user._id;
 
-    const profile = await UserProfileDetail.findOne({ userId: id }).populate("userId", "firstName lastName gender email");
+    const profile = await UserProfileDetail.findOne({ userId: id }).populate(
+      "userId",
+      "firstName lastName gender email"
+    );
     if (!profile) return res.status(404).json({ message: "Profile not found" });
 
     // ✅ Log activity for profile owner
@@ -119,55 +202,56 @@ export const viewProfile = async (req, res) => {
 };
 
 export const filterMatches = async (req, res) => {
-  //console.log(" Applied Filters ");
   try {
-    const filters = req.query;
-    const query = {};
+    const {
+      religion,
+      caste,
+      motherTongue,
+      city,
+      education,
+      profession,
+      income,
+      page = 1,
+      limit = 12
+    } = req.query;
 
-    // Helper function to check if a value is valid (not empty)
-    const isValid = (val) => val && val.trim() !== "";
+    const query = { isProfileVisible: true };
 
-    // Case-insensitive partial search for flexible filtering
-    if (isValid(filters.education))
-      query.education = { $regex: filters.education.trim(), $options: "i" };
+    const addFilter = (field, value) => {
+      if (value && value.trim() !== "") {
+        query[field] = { $regex: value.trim(), $options: "i" };
+      }
+    };
 
-    if (isValid(filters.religion))
-      query.religion = { $regex: `^${filters.religion.trim()}$`, $options: "i" };
+    addFilter("religion", religion);
+    addFilter("community", caste);
+    addFilter("motherTongue", motherTongue);
+    addFilter("city", city);
+    addFilter("highestQualification", education);
+    addFilter("designation", profession);
+    addFilter("annualIncome", income);
 
-    if (isValid(filters.salary))
-      query.salary = { $regex: filters.salary.trim(), $options: "i" };
-
-    if (isValid(filters.motherTongue))
-      query.motherTongue = { $regex: filters.motherTongue.trim(), $options: "i" };
-
-    if (isValid(filters.location))
-      query.location = { $regex: filters.location.trim(), $options: "i" };
-
-    // Only show visible profiles
-    query.isProfileVisible = true;
-
-   // console.log(" Applied Filters =>", query);
+    const skip = (page - 1) * limit;
 
     const matches = await UserProfileDetail.find(query)
-      .populate("userId", "firstName lastName gender email");
+      .populate("userId", "firstName lastName gender")
+      .skip(skip)
+      .limit(Number(limit));
 
-    if (!matches.length) {
-      return res.status(404).json({
-        message: "No matching profiles found",
-        matches: [],
-      });
-    }
+    const total = await UserProfileDetail.countDocuments(query);
 
     res.json({
       message: "Filtered matches fetched",
-      total: matches.length,
-      matches,
+      total,
+      page: Number(page),
+      pages: Math.ceil(total / limit),
+      matches
     });
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-
 
 // ✅ Accept / Reject / Block Interest or Chat Request
 export const handleRequestAction = async (req, res) => {
@@ -190,7 +274,9 @@ export const handleRequestAction = async (req, res) => {
 
     // Only receiver can act
     if (matchRequest.receiverId.toString() !== userId.toString()) {
-      return res.status(403).json({ message: "Not authorized to modify this request" });
+      return res
+        .status(403)
+        .json({ message: "Not authorized to modify this request" });
     }
 
     // Update status
@@ -200,11 +286,15 @@ export const handleRequestAction = async (req, res) => {
     // ✅ Log activity for sender if accepted
     if (action === "Accepted") {
       const receiverName = req.user.firstName + " " + req.user.lastName;
-      const activityType = matchRequest.type === "Interest" ? "InterestAccepted" : "ChatRequestAccepted";
-      const message = matchRequest.type === "Interest" 
-        ? `${receiverName} accepted your interest request` 
-        : `${receiverName} accepted your chat request`;
-      
+      const activityType =
+        matchRequest.type === "Interest"
+          ? "InterestAccepted"
+          : "ChatRequestAccepted";
+      const message =
+        matchRequest.type === "Interest"
+          ? `${receiverName} accepted your interest request`
+          : `${receiverName} accepted your chat request`;
+
       await createActivity(
         matchRequest.senderId,
         userId,
@@ -224,7 +314,6 @@ export const handleRequestAction = async (req, res) => {
   }
 };
 
-
 export const getPendingRequests = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -234,13 +323,15 @@ export const getPendingRequests = async (req, res) => {
       status: "Pending",
     }).populate("senderId", "firstName lastName email gender");
 
-    res.json({ message: "Pending requests fetched", total: requests.length, requests });
+    res.json({
+      message: "Pending requests fetched",
+      total: requests.length,
+      requests,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
-
-
 
 export const getDashboardStats = async (req, res) => {
   console.log(" Fetching Dashboard Stats ");
@@ -300,12 +391,10 @@ export const getDashboardStats = async (req, res) => {
     });
 
     console.log(" Dashboard stats sent ", res.data);
-
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-
 
 export const getDashboardRequestList = async (req, res) => {
   try {
@@ -327,9 +416,7 @@ export const getDashboardRequestList = async (req, res) => {
     // SENT REQUESTS (you → others)
     else if (type === "sent") {
       filter.senderId = userId;
-    }
-
-    else {
+    } else {
       return res.status(400).json({ message: "Invalid type" });
     }
 
@@ -348,7 +435,7 @@ export const getDashboardRequestList = async (req, res) => {
       // Fetch profile photo
       const photo = await UserPhotoGallery.findOne({
         userProfileId: otherUser._id,
-        isProfilePhoto: true
+        isProfilePhoto: true,
       });
 
       formatted.push({
@@ -368,7 +455,6 @@ export const getDashboardRequestList = async (req, res) => {
       total: formatted.length,
       users: formatted,
     });
-
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

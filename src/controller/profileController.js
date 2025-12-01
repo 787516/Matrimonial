@@ -7,23 +7,60 @@ import cloudinary from "../config/cloudinary.js";
 import fs from "fs";
 
 // ✅ Fetch complete user profile (joins User + Profile)
+// ✅ Fetch complete user profile (User + Profile + Profile Photo)
 export const getUserProfile = async (req, res) => {
   try {
     const userId = req.params.id;
 
     const profile = await UserProfileDetail.findOne({ userId })
-      .populate("userId", "firstName lastName email phone gender dateOfBirth maritalStatus");
+      .populate("userId", 
+        "firstName lastName email phone gender dateOfBirth maritalStatus"
+      )
+      .lean(); // important to modify the object
 
     if (!profile) {
       return res.status(404).json({ message: "Profile not found" });
     }
 
-    res.status(200).json({ message: "Profile fetched successfully", profile });
+    // ================================
+    // 🔥 Fetch Profile Photo
+    // ================================
+    const profilePhoto = await UserPhotoGallery.findOne({
+      userProfileId: userId,
+      isProfilePhoto: true,
+    });
+
+    // If no profilePhoto found → fallback to first gallery image
+    let fallbackPhoto = null;
+
+    if (!profilePhoto) {
+      fallbackPhoto = await UserPhotoGallery.findOne({
+        userProfileId: userId,
+      }).sort({ createdAt: 1 });
+    }
+
+    // ⬇ attach to final result
+    profile.profilePhoto = 
+      profilePhoto?.imageUrl || 
+      fallbackPhoto?.imageUrl || 
+      null;
+
+    res.status(200).json({
+      success: true,
+      message: "Profile fetched successfully",
+      profile,
+    });
+
   } catch (error) {
     console.error("❌ Error fetching profile:", error);
-    res.status(500).json({ error: "Failed to fetch profile" , error: error.message});
+    res.status(500).json({ 
+      success: false,
+      message: "Failed to fetch profile",
+      error: error.message 
+    });
   }
 };
+
 
 // ✅ Create or Update Profile
 export const updateUserProfile = async (req, res) => {
@@ -230,6 +267,13 @@ export const addPhoto = async (req, res) => {
 
     const savedPhotos = await UserPhotoGallery.insertMany(photoData);
 
+    if (isProfilePhoto) {
+  await UserProfileDetail.findOneAndUpdate(
+    { userId: userProfileId },
+    { profilePhoto: savedPhotos[0].imageUrl },
+    { new: true }
+  );
+}
     res.status(201).json({
       message: "Photos uploaded successfully",
       photos: savedPhotos,
