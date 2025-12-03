@@ -14,80 +14,82 @@ const transporter = nodemailer.createTransport({
  * Send OTP Email (Registration / Password Reset / Email Change)
  */
 
-async function sendOtpEmail(email, otp, purpose = "registration") {
+async function sendOtpEmail(email, otp = null, purpose = "registration") {
   try {
     let subject = "";
     let introMessage = "";
+    let showOtpBlock = true;
 
-    // 🎯 Define custom messages for each purpose
     switch (purpose) {
       case "reset":
         subject = "Reset Your Password - Matrimony App 🔒";
-        introMessage =
-          "We received a request to reset your password. Please use the OTP below to complete the process.";
+        introMessage = "We received a request to reset your password. Please use the OTP below to continue.";
         break;
 
       case "resetEmail":
-        subject = "Confirm Your New Email Address - Matrimony App 📧";
-        introMessage =
-          "You requested to change your registered email address. Please verify this new email using the OTP below to complete the update.";
+        subject = "Verify Your New Email - Matrimony App 📧";
+        introMessage = "You requested to change your registered email. Use the OTP below to verify this new email.";
+        break;
+
+      case "alertOldEmail":
+        subject = "⚠ Security Alert: Email Change Requested";
+        introMessage = `
+          Your account has requested to update the registered email address.<br/>
+          If this was <strong>NOT</strong> you, please secure your account immediately.
+        `;
+        showOtpBlock = false; // ❌ No OTP here
         break;
 
       default:
         subject = "Your OTP Verification Code - Matrimony App 💍";
-        introMessage =
-          "Thank you for registering with <strong>Matrimony Platform</strong>. Please verify your email using the OTP below.";
+        introMessage = "Thank you for registering. Use the OTP below to verify your email.";
     }
 
     const mailOptions = {
-      from:
-        process.env.FROM_EMAIL || "Matrimony App <omkarpowar8724@gmail.com>",
+      from: process.env.FROM_EMAIL || "Matrimony App <omkarpowar8724@gmail.com>",
       to: email,
       subject,
       html: `
-      <div style="background-color:#f8f9fa; padding:40px 0; font-family: 'Segoe UI', Arial, sans-serif;">
-        <div style="max-width:600px; background-color:#ffffff; margin:0 auto; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.1); overflow:hidden;">
+      <div style="background:#f8f9fa;padding:40px 0;font-family:Arial">
+        <div style="max-width:600px;margin:0 auto;background:white;border-radius:10px;overflow:hidden">
           
-          <!-- Header -->
-          <div style="background-color:#d92332; padding:20px 0; text-align:center;">
-            <h1 style="color:#ffffff; margin:0; font-size:24px;">Matrimony App</h1>
-          </div>
-          
-          <!-- Body -->
-          <div style="padding:30px; color:#333333;">
-            <p style="font-size:16px; margin-bottom:15px;">Hi there,</p>
-            <p style="font-size:16px; line-height:1.6;">${introMessage}</p>
-
-            <div style="text-align:center; margin:30px 0;">
-              <p style="font-size:18px; color:#555;">Your One-Time Password (OTP)</p>
-              <h2 style="font-size:36px; color:#d92332; letter-spacing:4px; margin:10px 0;">${otp}</h2>
-              <p style="font-size:14px; color:#777;">Valid for <strong>10 minutes</strong>.</p>
-            </div>
-
-            <p style="font-size:15px; line-height:1.6;">If you did not request this, please ignore this email. Your account remains secure.</p>
-
-            <p style="margin-top:30px;">Best regards,<br/>
-            <strong style="color:#d92332;">Matrimony App Team</strong></p>
+          <div style="background:#d92332;padding:20px;text-align:center;color:#fff;font-size:22px">
+            Matrimony App
           </div>
 
-          <!-- Footer -->
-          <div style="background-color:#f1f1f1; text-align:center; padding:15px 0;">
-            <p style="font-size:12px; color:#888; margin:0;">
-              &copy; ${new Date().getFullYear()} Matrimony App. All rights reserved.<br/>
-              <a href="#" style="color:#d92332; text-decoration:none;">Visit our website</a>
-            </p>
+          <div style="padding:30px;font-size:15px;color:#333">
+            <p>Hi there,</p>
+            <p>${introMessage}</p>
+
+            ${
+              showOtpBlock
+                ? `
+              <div style="text-align:center;margin:30px 0">
+                <p style="font-size:18px;color:#555">Your OTP Code</p>
+                <h2 style="font-size:36px;color:#d92332;letter-spacing:4px">${otp}</h2>
+                <p style="font-size:13px;color:#777">Valid for 10 minutes</p>
+              </div>`
+                : ""
+            }
+
+            <p>If this action wasn't done by you, please change your password immediately.</p>
+
+            <p style="margin-top:25px">Regards,<br/><b style="color:#d92332">Matrimony Team</b></p>
           </div>
 
+          <div style="background:#eee;padding:12px;text-align:center;font-size:12px;color:#777">
+            © ${new Date().getFullYear()} Matrimony App
+          </div>
         </div>
       </div>
       `,
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`✅ OTP (${purpose}) sent successfully to ${email}`);
+    console.log(`📧 Email sent (${purpose}) → ${email}`);
   } catch (error) {
-    console.error("❌ Error sending OTP:", error);
-    throw new Error("Failed to send OTP email");
+    console.error("❌ Email send error:", error);
+    throw new Error("Failed to send email");
   }
 }
 

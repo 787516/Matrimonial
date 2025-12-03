@@ -1,6 +1,25 @@
 import mongoose from "mongoose";
 import validator from "validator";
 
+const allowedProfileFor = [
+  "self",
+  "son",
+  "daughter",
+  "sibling",
+  "relative",
+  "friend",
+  "other",
+];
+
+const allowedCreatedBy = [
+  "self",
+  "parent",
+  "sibling",
+  "relative",
+  "friend",
+  "other",
+];
+
 const profileSchema = new mongoose.Schema(
   {
     userId: {
@@ -11,63 +30,62 @@ const profileSchema = new mongoose.Schema(
     },
 
     /* ----------------------------------------------------
-       BASIC INFO / EDIT PERSONAL
+       BASIC INFO
     ---------------------------------------------------- */
+
     profileFor: {
       type: String,
-      enum: ["Self", "Son", "Daughter", "Sibling", "Relative", "Friend", "Other"],
-      default: "Self",
+      trim: true,
+      lowercase: true,
+      default: "self",
+      validate: {
+        validator: function (v) {
+          return allowedProfileFor.includes(String(v).toLowerCase().trim());
+        },
+        message:
+          "Invalid profileFor. Allowed: Self, Son, Daughter, Sibling, Relative, Friend, Other",
+      },
     },
 
     profileCreatedBy: {
       type: String,
-      enum: ["Self", "Parent", "Sibling", "Relative", "Friend", "Other"],
-      default: "Self",
+      trim: true,
+      lowercase: true,
+      default: "self",
+      validate: {
+        validator: function (v) {
+          return allowedCreatedBy.includes(String(v).toLowerCase().trim());
+        },
+        message:
+          "Invalid profileCreatedBy. Allowed: Self, Parent, Sibling, Relative, Friend, Other",
+      },
     },
 
-    // gender: { type: String, enum: ["Male", "Female", "Other"] },
-    gender: { type: String, trim: true },
-
+    gender: {
+      type: String,
+      trim: true,
+      lowercase: true,
+    },
 
     dateOfBirth: {
       type: Date,
       required: false,
     },
 
-    // maritalStatus: {
-    //   type: String,
-    //   enum: [
-    //     "Never Married",
-    //     "Married",
-    //     "Divorced",
-    //     "Widowed",
-    //     "Awaiting Divorce",
-    //     "Separated",
-    //     "Other",
-    //   ],
-    //   default: "Never Married",
-    // },
     maritalStatus: {
-  type: String,
-  trim: true,
-},
+      type: String,
+      trim: true,
+      lowercase: true,
+    },
 
-
-    height: { type: Number, min: 100, max: 250 }, // cm
+    height: { type: Number, min: 100, max: 250 },
     weight: { type: Number, min: 30, max: 200 },
 
-    complexion: {
-      type: String,
-      enum: ["Very Fair", "Fair", "Wheatish", "Dusky", "Dark", "Other"],
-    },
+    complexion: { type: String, trim: true, lowercase: true },
+    bodyType: { type: String, trim: true, lowercase: true },
 
-    bodyType: {
-      type: String,
-      enum: ["Slim", "Average", "Athletic", "Heavy", "Other"],
-    },
-
-    hairColor: { type: String, trim: true, maxlength: 50 },
-    eyeColor: { type: String, trim: true, maxlength: 50 },
+    hairColor: { type: String, trim: true },
+    eyeColor: { type: String, trim: true },
 
     healthInformation: { type: String, maxlength: 200 },
 
@@ -76,37 +94,21 @@ const profileSchema = new mongoose.Schema(
     disabilityDetails: { type: String, maxlength: 400 },
     affectsDailyLife: { type: Boolean, default: false },
 
-    bloodGroup: {
-      type: String,
-      //enum: ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-", null],
-    },
+    bloodGroup: { type: String, trim: true },
 
-    diet: {
-      type: String,
-      //enum: ["Veg", "Non-Veg", "Eggetarian", "Vegan", "Other"],
-    },
+    diet: { type: String, trim: true, lowercase: true },
 
-    smoking: {
-      type: String,
-     // enum: ["No", "Occasionally", "Yes", "Prefer not to say"],
-      default: "No",
-      
-    },
-
-    drinking: {
-      type: String,
-     // enum: ["No", "Occasionally", "Yes", "Prefer not to say"],
-      default: "No",
-    },
+    smoking: { type: String, trim: true, lowercase: true, default: "no" },
+    drinking: { type: String, trim: true, lowercase: true, default: "no" },
 
     /* ----------------------------------------------------
-       FAMILY INFORMATION
+       FAMILY
     ---------------------------------------------------- */
-    fatherName: { type: String, trim: true, maxlength: 80 },
-    fatherOccupation: { type: String, trim: true, maxlength: 120 },
+    fatherName: { type: String, trim: true },
+    fatherOccupation: { type: String, trim: true },
 
-    motherName: { type: String, trim: true, maxlength: 80 },
-    motherOccupation: { type: String, trim: true, maxlength: 120 },
+    motherName: { type: String, trim: true },
+    motherOccupation: { type: String, trim: true },
 
     noOfBrothers: { type: Number, min: 0, max: 15 },
     marriedBrothers: { type: Number, min: 0, max: 15 },
@@ -114,109 +116,81 @@ const profileSchema = new mongoose.Schema(
     noOfSisters: { type: Number, min: 0, max: 15 },
     marriedSisters: { type: Number, min: 0, max: 15 },
 
-    familyType: {
-      type: String,
-      //enum: ["Joint", "Nuclear", "Other"],
-      default: "Nuclear"
-      
-    },
+    familyType: { type: String, trim: true, lowercase: true, default: "nuclear" },
 
     /* ----------------------------------------------------
-       RELIGIOUS BACKGROUND
+       RELIGIOUS
     ---------------------------------------------------- */
-    religion: { type: String, trim: true, maxlength: 50 },
-    community: { type: String, trim: true, maxlength: 80 },
-    subCommunity: { type: String, trim: true, maxlength: 80 },
-    subCaste: { type: String, trim: true, maxlength: 80 },
-
-    motherTongue: { type: String, trim: true, maxlength: 50 },
-    gothra: { type: String, trim: true, maxlength: 80 },
+    religion: { type: String, trim: true },
+    community: { type: String, trim: true },
+    subCommunity: { type: String, trim: true },
+    subCaste: { type: String, trim: true },
+    motherTongue: { type: String, trim: true },
+    gothra: { type: String, trim: true },
 
     /* ----------------------------------------------------
        EDUCATION & CAREER
     ---------------------------------------------------- */
-    highestQualification: { type: String, trim: true, maxlength: 100 },
-    course: { type: String, trim: true, maxlength: 100 },
-    collegeName: { type: String, trim: true, maxlength: 150 },
+    highestQualification: { type: String, trim: true },
+    course: { type: String, trim: true },
+    collegeName: { type: String, trim: true },
 
-    workingWith: {
-      type: String,
-      // enum: [
-      //   "Pvt. Company",
-      //   "MNC",
-      //   "Government/PSU",
-      //   "Startup",
-      //   "Self-employed/Freelance",
-      //   "Business",
-      //   "NGO",
-      //   "Student",
-      //   "Not Working",
-      //   "Other",
-      // ],
-    },
+    workingWith: { type: String, trim: true, lowercase: true },
+    designation: { type: String, trim: true },
+    companyName: { type: String, trim: true },
 
-    designation: { type: String, trim: true, maxlength: 120 },
-    companyName: { type: String, trim: true, maxlength: 150 },
+    annualIncome: { type: String, trim: true },
 
-    annualIncome: { type: String, trim: true, maxlength: 50 },
-
-    businessType: { type: String, trim: true, maxlength: 150 },
-    businessName: { type: String, trim: true, maxlength: 150 },
-    businessYears: { type: String, trim: true, maxlength: 50 },
-    businessLocation: { type: String, trim: true, maxlength: 150 },
+    businessType: { type: String, trim: true },
+    businessName: { type: String, trim: true },
+    businessYears: { type: String, trim: true },
+    businessLocation: { type: String, trim: true },
 
     /* ----------------------------------------------------
        LOCATION
     ---------------------------------------------------- */
-    country: { type: String, trim: true, maxlength: 60 },
-    state: { type: String, trim: true, maxlength: 60 },
-    city: { type: String, trim: true, maxlength: 60 },
+    country: { type: String, trim: true, lowercase: true },
+    state: { type: String, trim: true, lowercase: true },
+    city: { type: String, trim: true, lowercase: true },
 
-    area: { type: String, trim: true, maxlength: 150 },
-    pincode: { type: String, trim: true, maxlength: 10 },
+    area: { type: String, trim: true, lowercase: true },
+    pincode: { type: String, trim: true },
 
-    residencyStatus: {
-      type: String,
-     // enum: ["Owned", "Rented", "Company Provided", "Family", "PG/Hostel", "Other"],
-    },
+    residencyStatus: { type: String, trim: true, lowercase: true },
 
-    permanentAddress: { type: String, maxlength: 500 },
-    residentialAddress: { type: String, maxlength: 500 },
+    permanentAddress: { type: String },
+    residentialAddress: { type: String },
 
     /* ----------------------------------------------------
        HOROSCOPE
     ---------------------------------------------------- */
-    countryOfBirth: { type: String, trim: true, maxlength: 60 },
-    cityOfBirth: { type: String, trim: true, maxlength: 60 },
+    countryOfBirth: { type: String, trim: true },
+    cityOfBirth: { type: String, trim: true },
 
     birthHour: { type: Number, min: 0, max: 12 },
     birthMinute: { type: Number, min: 0, max: 59 },
-    birthAmPm: { type: String, enum: ["AM", "PM"] },
+    birthAmPm: { type: String, trim: true, lowercase: true },
 
     timeOfBirth: {
       type: String,
       match: [/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, "Invalid time format HH:MM"],
     },
 
-    rashi: { type: String, trim: true, maxlength: 50 },
-    nadi: { type: String, enum: ["Adi", "Madhya", "Antya"] },
-    gan: { type: String, trim: true, maxlength: 50 },
-    charan: { type: String, trim: true, maxlength: 50 },
-    manglik: {
-      type: String,
-      enum: ["Yes", "No", "Don't Know"],
-      default: "Don't Know",
-    },
+    rashi: { type: String, trim: true },
+    nadi: { type: String, trim: true, lowercase: true },
+    gan: { type: String, trim: true },
+    charan: { type: String, trim: true },
+    manglik: { type: String, trim: true, lowercase: true, default: "don't know" },
 
     /* ----------------------------------------------------
        LIFESTYLE
     ---------------------------------------------------- */
     hobbies: { type: [String], default: [] },
-    favouriteCuisine: { type: String, trim: true, maxlength: 120 },
-    favouriteMusic: { type: String, trim: true, maxlength: 120 },
+    favouriteCuisine: { type: String, trim: true },
+    favouriteMusic: { type: String, trim: true },
 
     /* ----------------------------------------------------
-       ABOUT ME
+       ABOUT
     ---------------------------------------------------- */
     shortIntro: { type: String, maxlength: 300 },
     aboutMe: { type: String, maxlength: 2000 },
@@ -230,9 +204,6 @@ const profileSchema = new mongoose.Schema(
       validate: (v) => !v || validator.isURL(v),
     },
 
-    /* ----------------------------------------------------
-       SYSTEM FIELDS
-    ---------------------------------------------------- */
     profileCompleted: { type: Number, default: 0 },
     isProfileVisible: { type: Boolean, default: true },
 
@@ -241,5 +212,20 @@ const profileSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Normalize everything before saving
+profileSchema.pre("save", function (next) {
+  if (this.profileFor) this.profileFor = this.profileFor.toLowerCase().trim();
+  if (this.profileCreatedBy)
+    this.profileCreatedBy = this.profileCreatedBy.toLowerCase().trim();
+  if (this.gender) this.gender = this.gender.toLowerCase().trim();
+
+  if (this.country) this.country = this.country.toLowerCase().trim();
+  if (this.state) this.state = this.state.toLowerCase().trim();
+  if (this.city) this.city = this.city.toLowerCase().trim();
+  if (this.area) this.area = this.area.toLowerCase().trim();
+
+  next();
+});
 
 export default mongoose.model("UserProfileDetail", profileSchema);

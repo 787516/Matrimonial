@@ -1,23 +1,38 @@
+// models/userModel.js
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import validator from "validator";
+
+// Optional: allowed values (NOT enums – just for our own validation/messages)
+const ALLOWED_PROFILE_FOR = [
+  "self",
+  "son",
+  "daughter",
+  "brother",
+  "sister",
+  "friend",
+  "relative",
+];
+
+const ALLOWED_GENDER = ["male", "female", "other"];
 
 const userSchema = new mongoose.Schema(
   {
     profileFor: {
       type: String,
       required: true,
-      enum: [
-        "Self",
-        "Son",
-        "Daughter",
-        "Brother",
-        "Sister",
-        "Friend",
-        "Relative",
-      ],
       trim: true,
+      lowercase: true,
+      validate: {
+        validator: function (v) {
+          if (!v) return false;
+          const val = String(v).toLowerCase().trim();
+          return ALLOWED_PROFILE_FOR.includes(val);
+        },
+        message:
+          "Invalid profileFor. Allowed: Self, Son, Daughter, Brother, Sister, Friend, Relative",
+      },
     },
 
     firstName: {
@@ -25,6 +40,8 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
       lowercase: true,
+      minlength: [2, "First name too short"],
+      maxlength: [50, "First name too long"],
     },
 
     lastName: {
@@ -32,12 +49,17 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
       lowercase: true,
+      minlength: [2, "Last name too short"],
+      maxlength: [50, "Last name too long"],
     },
+
     middleName: {
       type: String,
       trim: true,
       lowercase: true,
       required: true,
+      minlength: [1, "Middle name too short"],
+      maxlength: [50, "Middle name too long"],
     },
 
     email: {
@@ -48,7 +70,7 @@ const userSchema = new mongoose.Schema(
       trim: true,
       validate(value) {
         if (!validator.isEmail(value)) {
-          throw new Error("Invalid Email address");
+          throw new Error("Invalid email address");
         }
       },
     },
@@ -65,24 +87,25 @@ const userSchema = new mongoose.Schema(
       },
     },
 
-    // password: {
-    //   type: String,
-    //   required: true,
-    //   minlength: 6,
-    //   select: false,
-    // },
-        password: {
+    password: {
       type: String,
-      required: false,
+      required: false, // we set later in setPassword / resetPassword
       select: false,
     },
-    
-    
+
     gender: {
       type: String,
-      enum: ["male", "female", "other"],
       required: true,
       lowercase: true,
+      trim: true,
+      validate: {
+        validator: function (v) {
+          if (!v) return false;
+          const val = String(v).toLowerCase().trim();
+          return ALLOWED_GENDER.includes(val);
+        },
+        message: "Invalid gender. Allowed: Male, Female, Other",
+      },
     },
 
     dateOfBirth: {
@@ -93,21 +116,58 @@ const userSchema = new mongoose.Schema(
     maritalStatus: {
       type: String,
       required: true,
-      //enum: ["Single", "Divorced", "Widowed"],
+      trim: true,
+      minlength: [3, "Marital status too short"],
+      maxlength: [50, "Marital status too long"],
+      // ❗ No enum – free string but still required
     },
-    // To show small data on dashboard & match cards
-// age: { type: Number, min },   // auto-calc from DOB at pre-save
 
-// For quick search / match listing
-city: { type: String , trim: true , required: true,minlength: [2, "City name too short"], maxlength: [100, "City name too long"] },
-pincode: { type: String , trim: true , minlength: [2, "Pincode too short"], maxlength: [10, "Pincode too long"] },
-state: { type: String , trim: true , required: true, minlength: [2, "State name too short"], maxlength: [100, "State name too long"] },
-country: { type: String , trim: true , required: true, minlength: [2, "Country name too short"], maxlength: [100, "Country name too long"] },
-district: { type: String , trim: true , required: true, minlength: [2, "District name too short"], maxlength: [100, "District name too long"] },
-area: { type: String , trim: true , minlength: [2, "Area name too short"], maxlength: [100, "Area name too long"] },
+    // Quick search fields
+    city: {
+      type: String,
+      trim: true,
+      required: true,
+      minlength: [2, "City name too short"],
+      maxlength: [100, "City name too long"],
+    },
 
-// For contact visibility (plans)
-// contactVisible: { type: Boolean, default: false },
+    pincode: {
+      type: String,
+      trim: true,
+      minlength: [2, "Pincode too short"],
+      maxlength: [10, "Pincode too long"],
+    },
+
+    state: {
+      type: String,
+      trim: true,
+      required: true,
+      minlength: [2, "State name too short"],
+      maxlength: [100, "State name too long"],
+    },
+
+    country: {
+      type: String,
+      trim: true,
+      required: true,
+      minlength: [2, "Country name too short"],
+      maxlength: [100, "Country name too long"],
+    },
+
+    district: {
+      type: String,
+      trim: true,
+      required: true,
+      minlength: [2, "District name too short"],
+      maxlength: [100, "District name too long"],
+    },
+
+    area: {
+      type: String,
+      trim: true,
+      minlength: [2, "Area name too short"],
+      maxlength: [100, "Area name too long"],
+    },
 
     // Verification & Security
     emailVerified: { type: Boolean, default: false },
@@ -116,31 +176,31 @@ area: { type: String , trim: true , minlength: [2, "Area name too short"], maxle
     otp: { type: String },
     otpExpiry: { type: Date },
 
-    // Account status & Role
+    // Account status & Role – NO enums to avoid issues
     role: {
       type: String,
-      enum: ["User", "Admin"],
       default: "User",
+      trim: true,
     },
 
     status: {
       type: String,
-      enum: ["PendingPassword","Active", "Pending", "Blocked", "Deactivate", "Deleted"],
-      default: "PendingPassword",
+      default: "PendingPassword", // PendingPassword, Active, Blocked, etc.
+      trim: true,
     },
 
     profileCompleted: {
       type: Number,
-      default: 0, // later compute based on fields filled
+      default: 0,
     },
-    // In your User model (userModel.js)
+
+    // For email change flow
     pendingEmail: {
       type: String,
       trim: true,
       lowercase: true,
       validate: {
         validator: function (v) {
-          // validate only if a pending email exists
           if (!v) return true;
           return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
         },
@@ -160,7 +220,7 @@ area: { type: String , trim: true , minlength: [2, "Area name too short"], maxle
       type: Date,
       validate: {
         validator: function (v) {
-          if (!v) return true; // allow null
+          if (!v) return true;
           return v > Date.now();
         },
         message: "OTP expiry must be a future date",
@@ -170,13 +230,13 @@ area: { type: String , trim: true , minlength: [2, "Area name too short"], maxle
     deactivation: {
       isDeactivated: { type: Boolean, default: false },
       reason: { type: String },
-      deactivateUntil: { type: Date }, // store reactivation date
+      deactivateUntil: { type: Date },
     },
-    registrationId: {
-  type: String,
-  unique: true,
-},
 
+    registrationId: {
+      type: String,
+      unique: true,
+    },
 
     deleteReason: {
       reason: { type: String },
@@ -184,11 +244,10 @@ area: { type: String , trim: true , minlength: [2, "Area name too short"], maxle
       deletedAt: { type: Date },
     },
 
-   refreshToken: {
-  type: String,
-  default: null,
-}
-
+    refreshToken: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true }
 );
@@ -197,7 +256,7 @@ area: { type: String , trim: true , minlength: [2, "Area name too short"], maxle
 userSchema.methods.generateAuthToken = function () {
   const token = jwt.sign(
     { _id: this._id, role: this.role },
-    //process.env.JWT_SECRET,
+    // process.env.JWT_SECRET,
     "Smp346##",
     { expiresIn: "1d" }
   );
@@ -218,9 +277,9 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
-
 // ✅ Compare passwords
 userSchema.methods.validatePassword = async function (plainPassword) {
+  if (!this.password) return false; // handle users with no password yet
   return await bcrypt.compare(plainPassword, this.password);
 };
 

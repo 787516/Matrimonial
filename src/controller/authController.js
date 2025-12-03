@@ -133,27 +133,46 @@ const getFullUserBundle = async (userId) => {
 // };
 
 // SEND OTP (resend during registration)
-// export const sendOtp = async (req, res) => {
-//   try {
-//     const { email } = req.body;
-//     if (!email) return res.status(400).json({ message: "Email required" });
+export const sendOtp = async (req, res) => {
+  try {
+    const email = req.body.email?.toLowerCase().trim();
 
-//     const existingUser = await User.findOne({ email });
-//     if (existingUser) return res.status(400).json({ message: "Email already registered" });
+    if (!email) {
+      return res.status(400).json({ message: "Email required" });
+    }
 
-//     const pending = await PendingUser.findOne({ email });
-//     if (!pending) return res.status(404).json({ message: "No pending registration found. Please register first." });
+    // ❌ If user is already registered, do NOT resend OTP
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res
+        .status(400)
+        .json({ message: "Email already registered" });
+    }
 
-//     const otp = String(Math.floor(100000 + Math.random() * 900000));
-//     pending.otp = otp;
-//     pending.otpExpiry = Date.now() + 10 * 60 * 1000;
-//     await pending.save();
-//     // TODO: await sendOtpEmail(email, otp)
-//     res.json({ message: "OTP resent to email" });
-//   } catch (e) {
-//     res.status(500).json({ error: e.message });
-//   }
-// };
+    // ✔ Check pending user
+    const pending = await PendingUser.findOne({ email });
+    if (!pending) {
+      return res.status(404).json({
+        message: "No pending registration found. Please register first.",
+      });
+    }
+
+    // ✔ Generate new OTP
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    pending.otp = otp;
+    pending.otpExpiry = Date.now() + 10 * 60 * 1000;
+    await pending.save();
+
+    // ✔ Send email
+    await sendOtpEmail(email, otp);
+
+    res.json({ message: "OTP resent to email" });
+  } catch (e) {
+    console.error("Send OTP error:", e);
+    res.status(500).json({ error: e.message });
+  }
+};
+
 
 // 🔥 FINAL LOGIN CONTROLLER (Merged Unified Schema)
 export const loginUser = async (req, res) => {

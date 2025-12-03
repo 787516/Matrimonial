@@ -2,7 +2,7 @@ import express from "express";
 import {
   registerUser,
   loginUser,
-  //sendOtp,
+  sendOtp,
   verifyOtp,
   setPassword,
   //resetPassword,
@@ -19,6 +19,7 @@ const router = express.Router();
 router.post("/register", registerUser);
 router.post("/login", loginUser);
 //router.post("/send-otp", sendOtp);
+router.post("/resend-otp", sendOtp);
 router.post("/verify-otp", verifyOtp);
 router.post("/set-password", setPassword);
 //router.post("/reset-password", resetPassword);

@@ -8,9 +8,9 @@ import User from "../models/userModel.js";
 
 export const getNotifications = async (req, res) => {
   try {
-    const userId = req.user._id;
-    const { page = 1, limit = 20, unreadOnly = false } = req.query;
 
+    const userId = req.user._id;
+    const { page = 1, limit = 20, unreadOnly = false } = req.query;    
     const skip = (page - 1) * limit;
 
     // Build filter
@@ -98,6 +98,7 @@ export const markAllAsRead = async (req, res) => {
 /**
  * ✅ Delete a single notification
  */
+
 export const deleteNotification = async (req, res) => {
   try {
     const { notificationId } = req.params;

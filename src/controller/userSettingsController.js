@@ -8,6 +8,39 @@ import validator from "validator";
  * ✅ Request Email Change (Send OTP to new email)
  */
 
+// export const requestEmailChange = async (req, res) => {
+//   try {
+//     const userId = req.user._id;
+//     const { newEmail } = req.body;
+
+//     if (!newEmail || !validator.isEmail(newEmail.trim())) {
+//       return res.status(400).json({ message: "Invalid email format" });
+//     }
+
+//     const emailExists = await User.findOne({ email: newEmail.trim().toLowerCase() });
+//     if (emailExists) {
+//       return res.status(400).json({ message: "Email is already in use" });
+//     }
+
+//     const user = await User.findById(userId);
+//     if (!user) return res.status(404).json({ message: "User not found" });
+
+//     const otp = String(Math.floor(100000 + Math.random() * 900000));
+
+//     user.pendingEmail = newEmail.trim().toLowerCase();
+//     user.emailChangeOtp = otp;
+//     user.emailChangeOtpExpiry = Date.now() + 10 * 60 * 1000; // valid 10 mins
+//     await user.save();
+
+//     await sendOtpEmail(newEmail, otp, "resetEmail"); // send OTP to new email
+
+//     res.json({ message: `OTP sent to ${newEmail} for verification.` });
+//   } catch (err) {
+//     console.error("❌ Email change error:", err);
+//     res.status(500).json({ error: "Something went wrong while sending email change OTP." });
+//   }
+// };
+
 export const requestEmailChange = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -17,29 +50,40 @@ export const requestEmailChange = async (req, res) => {
       return res.status(400).json({ message: "Invalid email format" });
     }
 
-    const emailExists = await User.findOne({ email: newEmail.trim().toLowerCase() });
-    if (emailExists) {
-      return res.status(400).json({ message: "Email is already in use" });
+    const emailInUse = await User.findOne({ email: newEmail.trim() });
+    if (emailInUse) {
+      return res.status(400).json({ message: "Email is already registered" });
     }
 
     const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     const otp = String(Math.floor(100000 + Math.random() * 900000));
 
-    user.pendingEmail = newEmail.trim().toLowerCase();
+    // Save pending change details
+    user.pendingEmail = newEmail.trim();
     user.emailChangeOtp = otp;
-    user.emailChangeOtpExpiry = Date.now() + 10 * 60 * 1000; // valid 10 mins
+    user.emailChangeOtpExpiry = Date.now() + 10 * 60 * 1000;
     await user.save();
 
-    await sendOtpEmail(newEmail, otp, "resetEmail"); // send OTP to new email
+    // Send OTP to new email
+    await sendOtpEmail(newEmail, otp, "resetEmail");
 
-    res.json({ message: `OTP sent to ${newEmail} for verification.` });
+    // Send alert to OLD email
+    await sendOtpEmail(user.email, null, "alertOldEmail");
+
+    res.json({
+      message: "OTP sent to new email. Security alert sent to old email.",
+    });
+
   } catch (err) {
-    console.error("❌ Email change error:", err);
-    res.status(500).json({ error: "Something went wrong while sending email change OTP." });
+    console.error("❌ Email change request error:", err);
+    res.status(500).json({ error: "Something went wrong." });
   }
 };
+
 
 /**
  * ✅ Verify Email Change (Verify OTP and update email)
@@ -82,32 +126,24 @@ export const verifyEmailChange = async (req, res) => {
 export const updatePassword = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { currentPassword, newPassword } = req.body;
+    const { newPassword } = req.body;
 
-    // 🧩 Step 1 — Validate input
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ message: "Both current and new passwords are required." });
+    // Validate new password
+    if (!newPassword) {
+      return res.status(400).json({ message: "New password is required." });
     }
 
-    const user = await User.findById(userId).select("+password"); // ensure password is fetched
+    if (newPassword.length < 6) {
+      return res
+        .status(400)
+        .json({ message: "New password must be at least 6 characters long" });
+    }
+
+    // Find user
+    const user = await User.findById(userId).select("+password");
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    if (!user.password) {
-      return res.status(400).json({ message: "User password not found in database" });
-    }
-
-    // 🧩 Step 2 — Compare current password
-    const isMatch = await bcrypt.compare(String(currentPassword), String(user.password));
-    if (!isMatch) {
-      return res.status(400).json({ message: "Incorrect current password" });
-    }
-
-    // 🧩 Step 3 — Validate new password
-    if (newPassword.length < 6) {
-      return res.status(400).json({ message: "New password must be at least 6 characters long" });
-    }
-
-    // 🧩 Step 4 — Hash and save
+    // Hash and save
     user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
 
@@ -117,6 +153,7 @@ export const updatePassword = async (req, res) => {
     res.status(500).json({ error: "Failed to update password." });
   }
 };
+
 /**
  * ✅ Deactivate Profile Temporarily
  */

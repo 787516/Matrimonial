@@ -334,7 +334,7 @@ export const getPendingRequests = async (req, res) => {
 };
 
 export const getDashboardStats = async (req, res) => {
-  console.log(" Fetching Dashboard Stats ");
+ // console.log(" Fetching Dashboard Stats ");
   try {
     const userId = req.user._id;
 
@@ -390,13 +390,14 @@ export const getDashboardStats = async (req, res) => {
       },
     });
 
-    console.log(" Dashboard stats sent ", res.data);
+   // console.log(" Dashboard stats sent ", res.data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
 export const getDashboardRequestList = async (req, res) => {
+
   try {
     const userId = req.user._id;
 
@@ -422,8 +423,8 @@ export const getDashboardRequestList = async (req, res) => {
 
     // Find requests with user details
     const requests = await MatchRequest.find(filter)
-      .populate("senderId", "firstName lastName email gender")
-      .populate("receiverId", "firstName lastName email gender");
+      .populate("senderId", "firstName lastName email gender registrationId")
+      .populate("receiverId", "firstName lastName email gender registrationId")
 
     // Format final user list
     const formatted = [];
@@ -443,6 +444,7 @@ export const getDashboardRequestList = async (req, res) => {
         firstName: otherUser.firstName,
         lastName: otherUser.lastName,
         email: otherUser.email,
+        registrationId : otherUser.registrationId,
         gender: otherUser.gender,
         profilePhoto: photo ? photo.imageUrl : null,
         status: reqItem.status,
