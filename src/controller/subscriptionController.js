@@ -1,76 +1,77 @@
 import { razorpayInstance } from "../utils/razorpay.js";
 import SubscriptionPlan from "../models/subscriptionPlanModel.js";
 import UserSubscription from "../models/userSubscriptionModel.js";
-import crypto from "crypto";
 
-// 1️⃣ Create Razorpay order
-export const createOrder = async (req, res) => {
+export const createPaymentLink = async (req, res) => {
   try {
+    
+    const userId = req.user._id; // from your auth middleware
     const { planId } = req.body;
+
     const plan = await SubscriptionPlan.findById(planId);
     if (!plan) return res.status(404).json({ message: "Plan not found" });
 
-    const options = {
-      amount: plan.price * 100, // amount in paise
+    // 1. Create payment link on Razorpay
+    const paymentLink = await razorpayInstance.paymentLink.create({
+      amount: plan.price * 100, // INR → paise
       currency: "INR",
-      receipt: `receipt_${Date.now()}`,
-    };
-
-    const order = await razorpayInstance.orders.create(options);
-
-    const subscription = await UserSubscription.create({
-      userId: req.user._id,
-      planId,
-      paymentInfo: { orderId: order.id, amount: plan.price, currency: "INR" },
+      description: `Payment for ${plan.name} plan`,
+      customer: {
+        name: req.user.firstName || "User",
+        email: req.user.email,
+        contact: req.user.phone, // make sure you store this
+      },
+      callback_url: `http://localhost:5173/payment-result`,
+      callback_method: "get",
     });
 
-    res.json({ order, subscription });
+    // 2. Create or update a subscription record with Pending status
+    const subscription = await UserSubscription.findOneAndUpdate(
+      { userId, planId, status: "Pending" },
+      {
+        userId,
+        planId,
+        paymentLinkId: paymentLink.id,
+        status: "Pending",
+      },
+      { upsert: true, new: true }
+    );
+
+    return res.json({
+      success: true,
+      paymentLinkUrl: paymentLink.short_url,
+      subscriptionId: subscription._id,
+    });
+       console.log("▶️ createPaymentLink CALLED");
+    console.log("Received planId:", req.body.planId);
+    console.log("User:", req.user);
   } catch (error) {
-    console.error("Error creating order:", error);
-    res.status(500).json({ error: error.message });
+    console.error("Error creating payment link:", error);
+    res.status(500).json({ message: "Something went wrong" });
   }
 };
 
-// 2️⃣ Verify payment signature
-export const verifyPayment = async (req, res) => {
-  try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-    const userId = req.user._id;
-
-    const body = razorpay_order_id + "|" + razorpay_payment_id;
-    const expectedSignature = crypto
-      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-      .update(body.toString())
-      .digest("hex");
-
-    if (expectedSignature === razorpay_signature) {
-      const subscription = await UserSubscription.findOneAndUpdate(
-        { userId, "paymentInfo.orderId": razorpay_order_id },
-        {
-          $set: {
-            "paymentInfo.paymentId": razorpay_payment_id,
-            "paymentInfo.signature": razorpay_signature,
-            status: "Active",
-            startDate: new Date(),
-            endDate: new Date(new Date().setMonth(new Date().getMonth() + 6)), // 6-month default
-          },
-        },
-        { new: true }
-      );
-
-      res.json({ message: "Payment verified", subscription });
-    } else {
-      res.status(400).json({ message: "Invalid signature" });
-    }
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-// 3️⃣ Get user’s current subscription
 export const getMySubscription = async (req, res) => {
-  const subscription = await UserSubscription.findOne({ userId: req.user._id })
-    .populate("planId", "name price validityMonths benefits");
+  try {
+    const subscription = await UserSubscription.findOne({ userId: req.user._id })
+      .populate("planId");
 
-  res.json({ subscription });
+    res.json({ subscription });
+  } catch (error) {
+    res.status(500).json({ message: "Something went wrong" });
+  }
 };
+
+
+
+// GET all plans
+export const getPlans = async (req, res) => {
+  try {
+    const plans = await SubscriptionPlan.find({});
+    res.json({ success: true, plans });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+

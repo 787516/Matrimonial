@@ -5,7 +5,6 @@ import { createActivity } from "./notificationController.js"; // 👈 Import act
 import UserPartnerPreference from "../models/userPartnerPreferenceModel.js";
 import UserPhotoGallery from "../models/userPhotoGalleryModel.js";
 
-
 export const getMatchFeed = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -26,13 +25,12 @@ export const getMatchFeed = async (req, res) => {
       userId: { $ne: userId },
       isProfileVisible: true,
     })
-      .populate("userId", "firstName lastName email gender")
+      .populate("userId", "firstName lastName email gender registrationId ")
       .lean();
 
     // 3️⃣ Filter by gender from userId (User model)
     const genderMatched = allOppProfiles.filter(
-      (p) =>
-        p.userId?.gender?.toLowerCase() === oppositeGender.toLowerCase()
+      (p) => p.userId?.gender?.toLowerCase() === oppositeGender.toLowerCase()
     );
 
     // 4️⃣ Attach profilePhoto (from profile OR gallery)
@@ -42,8 +40,7 @@ export const getMatchFeed = async (req, res) => {
         isProfilePhoto: true,
       });
 
-      p.profilePhoto =
-        p.profilePhoto || gallery?.[0]?.imageUrl || null;
+      p.profilePhoto = p.profilePhoto || gallery?.[0]?.imageUrl || null;
     }
 
     // Continue your logic...
@@ -59,8 +56,7 @@ export const getMatchFeed = async (req, res) => {
     if (preference) {
       perfectMatches = genderMatched.filter((p) => {
         return (
-          (!preference.religion ||
-            equalsCI(p.religion, preference.religion)) &&
+          (!preference.religion || equalsCI(p.religion, preference.religion)) &&
           (!preference.motherTongue ||
             equalsCI(p.motherTongue, preference.motherTongue)) &&
           (!preference.city || equalsCI(p.city, preference.city))
@@ -83,9 +79,7 @@ export const getMatchFeed = async (req, res) => {
         (equalsCI(p.city, currentProfile.city) ||
           equalsCI(p.state, currentProfile.state))
     );
-    locationMatches.forEach((m) =>
-      used.add(m._id.toString())
-    );
+    locationMatches.forEach((m) => used.add(m._id.toString()));
 
     const fallbackMatches = genderMatched.filter(
       (p) => !used.has(p._id.toString())
@@ -103,8 +97,6 @@ export const getMatchFeed = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
-
-
 
 // 2️⃣ Send Interest
 export const sendInterest = async (req, res) => {
@@ -175,27 +167,38 @@ export const sendChatRequest = async (req, res) => {
 };
 
 // 4️⃣ View Profile
+// 4️⃣ View Profile
 export const viewProfile = async (req, res) => {
   try {
     const { id } = req.params;
     const viewerId = req.user._id;
 
+    // ✅ Fetch viewer user details (FIX for undefined name)
+    const viewer = await User.findById(viewerId).select("firstName lastName");
+    const viewerName = viewer
+      ? `${viewer.firstName} ${viewer.lastName}`
+      : "Someone";
+
+    // Fetch viewed profile
     const profile = await UserProfileDetail.findOne({ userId: id }).populate(
       "userId",
-      "firstName lastName gender email"
+      "firstName middleName lastName gender email phone registrationId"
     );
+
     if (!profile) return res.status(404).json({ message: "Profile not found" });
 
-    // ✅ Log activity for profile owner
-    const viewerName = req.user.firstName + " " + req.user.lastName;
+    // ⭐ Log activity for profile owner
     await createActivity(
-      id,
-      viewerId,
+      id, // receiver (profile owner)
+      viewerId, // sender
       "ProfileViewed",
       `${viewerName} viewed your profile`
     );
 
-    res.json({ message: "Profile viewed successfully", profile });
+    res.json({
+      message: "Profile viewed successfully",
+      profile,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -212,7 +215,7 @@ export const filterMatches = async (req, res) => {
       profession,
       income,
       page = 1,
-      limit = 12
+      limit = 12,
     } = req.query;
 
     const query = { isProfileVisible: true };
@@ -245,9 +248,8 @@ export const filterMatches = async (req, res) => {
       total,
       page: Number(page),
       pages: Math.ceil(total / limit),
-      matches
+      matches,
     });
-
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -334,7 +336,7 @@ export const getPendingRequests = async (req, res) => {
 };
 
 export const getDashboardStats = async (req, res) => {
- // console.log(" Fetching Dashboard Stats ");
+  // console.log(" Fetching Dashboard Stats ");
   try {
     const userId = req.user._id;
 
@@ -390,14 +392,13 @@ export const getDashboardStats = async (req, res) => {
       },
     });
 
-   // console.log(" Dashboard stats sent ", res.data);
+    // console.log(" Dashboard stats sent ", res.data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
 export const getDashboardRequestList = async (req, res) => {
-
   try {
     const userId = req.user._id;
 
@@ -408,6 +409,11 @@ export const getDashboardRequestList = async (req, res) => {
     }
 
     let filter = { status };
+
+    // 👇 NEW: only chat requests
+    if (req.query.onlyChat === "true") {
+      filter.type = "Chat";
+    }
 
     // RECEIVED REQUESTS (others → you)
     if (type === "received") {
@@ -424,7 +430,7 @@ export const getDashboardRequestList = async (req, res) => {
     // Find requests with user details
     const requests = await MatchRequest.find(filter)
       .populate("senderId", "firstName lastName email gender registrationId")
-      .populate("receiverId", "firstName lastName email gender registrationId")
+      .populate("receiverId", "firstName lastName email gender registrationId");
 
     // Format final user list
     const formatted = [];
@@ -432,6 +438,11 @@ export const getDashboardRequestList = async (req, res) => {
     for (const reqItem of requests) {
       const otherUser =
         type === "received" ? reqItem.senderId : reqItem.receiverId;
+
+      // Fetch profile details (location, language, age, etc.)
+      const profileDetails = await UserProfileDetail.findOne({
+        userId: otherUser._id,
+      }).lean();
 
       // Fetch profile photo
       const photo = await UserPhotoGallery.findOne({
@@ -444,9 +455,16 @@ export const getDashboardRequestList = async (req, res) => {
         firstName: otherUser.firstName,
         lastName: otherUser.lastName,
         email: otherUser.email,
-        registrationId : otherUser.registrationId,
+        registrationId: otherUser.registrationId,
         gender: otherUser.gender,
         profilePhoto: photo ? photo.imageUrl : null,
+
+        maritalStatus: profileDetails?.maritalStatus || "",
+        city: profileDetails?.city || "",
+        state: profileDetails?.state || "",
+        motherTongue: profileDetails?.motherTongue || "",
+        age: profileDetails?.age || "",
+
         status: reqItem.status,
         requestId: reqItem._id,
       });

@@ -173,7 +173,6 @@ export const sendOtp = async (req, res) => {
   }
 };
 
-
 // 🔥 FINAL LOGIN CONTROLLER (Merged Unified Schema)
 export const loginUser = async (req, res) => {
   try {
@@ -187,7 +186,6 @@ export const loginUser = async (req, res) => {
         message: "User not found" 
       });
     }
-
     // 🔹 Step 2: Validate password
     const isMatch = await user.validatePassword(password);
     if (!isMatch) {

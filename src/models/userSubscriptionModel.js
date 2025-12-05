@@ -1,35 +1,32 @@
+// models/userSubscriptionModel.js
 import mongoose from "mongoose";
 
-const subscriptionSchema = new mongoose.Schema(
+const userSubscriptionSchema = new mongoose.Schema(
   {
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-
     planId: {
-      type: String,
-      enum: ["FREE", "SILVER", "GOLD", "PLATINUM"],
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "SubscriptionPlan",
       required: true,
     },
 
-    price: Number,
-    durationDays: Number,
+    // Razorpay Payment Link
+    paymentLinkId: { type: String }, // from Razorpay
+    paymentId: { type: String }, // Razorpay payment id after success
 
-    // FEATURES
-    viewLimit: Number,
-    contactViewAllowed: Boolean,
-    chatAllowed: Boolean,
-    interestLimit: { type: String, enum: ["Limited", "Unlimited"] },
-    supportType: { type: String, enum: ["None", "Basic", "Advance"] },
-
-    // VALIDITY
-    startDate: Date,
-    endDate: Date,
-    isActive: { type: Boolean, default: true },
+    status: {
+      type: String,
+      enum: ["Pending", "Active", "Expired", "Cancelled"],
+      default: "Pending",
+    },
+    startDate: { type: Date },
+    endDate: { type: Date },
   },
   { timestamps: true }
 );
 
-export default mongoose.model("userSubscription", subscriptionSchema);
+export default mongoose.model("UserSubscription", userSubscriptionSchema);
