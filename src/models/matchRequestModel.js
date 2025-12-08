@@ -19,13 +19,19 @@ const matchRequestSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["Pending", "Accepted", "Rejected", "Blocked"],
+      enum: ["Pending", "Accepted", "Rejected", "Blocked", "Cancelled"],
       default: "Pending",
     },
     createdAt: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );
+
+
+// 🔹 Performance Indexes (do NOT change behavior)
+matchRequestSchema.index({ senderId: 1, receiverId: 1 });
+matchRequestSchema.index({ type: 1, status: 1 });
+matchRequestSchema.index({ createdAt: -1 });
 
 const MatchRequestModel = mongoose.model("MatchRequest", matchRequestSchema);
 export default MatchRequestModel;

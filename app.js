@@ -58,7 +58,7 @@ connectDB()
     server.listen(port, () => {
       console.log(`Server is running on http://localhost:${port}`);
     });
-    console.log("Connected to MongoDB successfully!");
+
   })
   .catch((err) => {
     console.log("Error connecting to MongoDB:", err);

@@ -1,10 +1,51 @@
 import UserProfileDetail from "../models/userProfileDetailModel.js";
 import MatchRequest from "../models/matchRequestModel.js";
-import User from "../models/userModel.js"; // 👈 needed for gender info
-import { createActivity } from "./notificationController.js"; // 👈 Import activity logger
+import User from "../models/userModel.js";
+import { createActivity } from "./notificationController.js";
 import UserPartnerPreference from "../models/userPartnerPreferenceModel.js";
 import UserPhotoGallery from "../models/userPhotoGalleryModel.js";
 
+// 🔹 Helper: safe string compare (already used below but let's make sure it's defined once)
+const equalsCI = (a, b) =>
+  a?.trim()?.toLowerCase() === b?.trim()?.toLowerCase();
+
+// 🔹 Helper: get all userIds you already interacted with (sent/received)
+const getInteractionExcludedUserIds = async (userId) => {
+  const interactions = await MatchRequest.find({
+    $or: [{ senderId: userId }, { receiverId: userId }],
+    status: { $in: ["Pending", "Accepted", "Rejected", "Blocked"] },
+  })
+    .select("senderId receiverId")
+    .lean();
+
+  const excluded = new Set();
+
+  interactions.forEach((req) => {
+    const s = req.senderId?.toString();
+    const r = req.receiverId?.toString();
+    const u = userId?.toString();
+
+    if (s === u && r) excluded.add(r);
+    else if (r === u && s) excluded.add(s);
+  });
+
+  return Array.from(excluded);
+};
+
+// 🔹 Helper: check if there is any 'Blocked' relationship between 2 users
+const hasBlockedBetween = async (userAId, userBId) => {
+  const blocked = await MatchRequest.findOne({
+    status: "Blocked",
+    $or: [
+      { senderId: userAId, receiverId: userBId },
+      { senderId: userBId, receiverId: userAId },
+    ],
+  }).lean();
+
+  return !!blocked;
+};
+
+//get match feed
 export const getMatchFeed = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -20,33 +61,108 @@ export const getMatchFeed = async (req, res) => {
     const oppositeGender =
       currentUser.gender?.toLowerCase() === "male" ? "female" : "male";
 
-    // 2️⃣ Fetch opposite gender profiles + JOIN: user + gallery
+    // 2️⃣ Exclude: self + ALL interacted users (sent/received/blocked/rejected)
+    const excludedUserIds = await getInteractionExcludedUserIds(userId);
+    const excludedSet = new Set([
+      userId.toString(),
+      ...excludedUserIds.map((id) => id.toString()),
+    ]);
+
+    // 3️⃣ Fetch opposite gender profiles + JOIN user
     const allOppProfiles = await UserProfileDetail.find({
-      userId: { $ne: userId },
       isProfileVisible: true,
+      // don't show self or already interacted users
+      userId: { $nin: Array.from(excludedSet) },
     })
-      .populate("userId", "firstName lastName email gender registrationId ")
+      .populate("userId", "firstName lastName email gender registrationId")
       .lean();
 
-    // 3️⃣ Filter by gender from userId (User model)
-    const genderMatched = allOppProfiles.filter(
-      (p) => p.userId?.gender?.toLowerCase() === oppositeGender.toLowerCase()
+    // 4️⃣ Filter by gender from userId (User model)
+    let genderMatched = allOppProfiles.filter(
+      (p) =>
+        p.userId?.gender &&
+        p.userId.gender.toLowerCase() === oppositeGender.toLowerCase()
     );
 
-    // 4️⃣ Attach profilePhoto (from profile OR gallery)
+    // 5️⃣ Respect *other user's* partner preferences (basic fields)
+    const filteredByOtherPrefs = [];
     for (const p of genderMatched) {
-      const gallery = await UserPhotoGallery.find({
+      const otherPref = await UserPartnerPreference.findOne({
         userProfileId: p._id,
-        isProfilePhoto: true,
-      });
+      }).lean();
 
-      p.profilePhoto = p.profilePhoto || gallery?.[0]?.imageUrl || null;
+      // If they have no preference → allow
+      if (!otherPref) {
+        filteredByOtherPrefs.push(p);
+        continue;
+      }
+
+      // If they DO have preferences → current user MUST match them
+      if (
+        otherPref.religion &&
+        !equalsCI(currentProfile.religion, otherPref.religion)
+      )
+        continue;
+      if (
+        otherPref.motherTongue &&
+        !equalsCI(currentProfile.motherTongue, otherPref.motherTongue)
+      )
+        continue;
+      if (otherPref.city && !equalsCI(currentProfile.city, otherPref.city))
+        continue;
+
+      filteredByOtherPrefs.push(p);
     }
 
-    // Continue your logic...
+    // 6️⃣ Attach profilePhoto (from profile OR gallery)
+    // 6️⃣ Attach flags + profile photo
+    for (const p of filteredByOtherPrefs) {
+      const otherUserId = p.userId?._id?.toString();
+
+      // A. Profile Photo
+      if (!p.profilePhoto) {
+        const gallery = await UserPhotoGallery.find({
+          userProfileId: p._id,
+          isProfilePhoto: true,
+        });
+        p.profilePhoto = gallery?.[0]?.imageUrl || null;
+      }
+
+      // B. Has Sent Interest
+      const sentInterest = await MatchRequest.findOne({
+        senderId: userId,
+        receiverId: otherUserId,
+        type: "Interest",
+        status: { $in: ["Pending", "Accepted"] },
+      }).lean();
+
+      p.hasSentInterest = !!sentInterest;
+
+      // C. Has Received Interest
+      const receivedInterest = await MatchRequest.findOne({
+        senderId: otherUserId,
+        receiverId: userId,
+        type: "Interest",
+        status: { $in: ["Pending"] },
+      }).lean();
+
+      p.hasReceivedInterest = !!receivedInterest;
+
+      // D. Is Blocked (either way)
+      const isBlocked = await MatchRequest.findOne({
+        type: "Interest",
+        status: "Blocked",
+        $or: [
+          { senderId: userId, receiverId: otherUserId },
+          { senderId: otherUserId, receiverId: userId },
+        ],
+      }).lean();
+
+      p.isBlocked = !!isBlocked;
+    }
+
+    // 7️⃣ Previous matching logic (unchanged, but uses filteredByOtherPrefs)
     const used = new Set();
-    const equalsCI = (a, b) =>
-      a?.trim()?.toLowerCase() === b?.trim()?.toLowerCase();
 
     let perfectMatches = [];
     const preference = await UserPartnerPreference.findOne({
@@ -54,7 +170,7 @@ export const getMatchFeed = async (req, res) => {
     });
 
     if (preference) {
-      perfectMatches = genderMatched.filter((p) => {
+      perfectMatches = filteredByOtherPrefs.filter((p) => {
         return (
           (!preference.religion || equalsCI(p.religion, preference.religion)) &&
           (!preference.motherTongue ||
@@ -66,14 +182,14 @@ export const getMatchFeed = async (req, res) => {
       perfectMatches.forEach((m) => used.add(m._id.toString()));
     }
 
-    const religionMatches = genderMatched.filter(
+    const religionMatches = filteredByOtherPrefs.filter(
       (p) =>
         !used.has(p._id.toString()) &&
         equalsCI(p.religion, currentProfile.religion)
     );
     religionMatches.forEach((m) => used.add(m._id.toString()));
 
-    const locationMatches = genderMatched.filter(
+    const locationMatches = filteredByOtherPrefs.filter(
       (p) =>
         !used.has(p._id.toString()) &&
         (equalsCI(p.city, currentProfile.city) ||
@@ -81,7 +197,7 @@ export const getMatchFeed = async (req, res) => {
     );
     locationMatches.forEach((m) => used.add(m._id.toString()));
 
-    const fallbackMatches = genderMatched.filter(
+    const fallbackMatches = filteredByOtherPrefs.filter(
       (p) => !used.has(p._id.toString())
     );
 
@@ -104,22 +220,68 @@ export const sendInterest = async (req, res) => {
     const { receiverId } = req.body;
     const senderId = req.user._id;
 
-    const existingRequest = await MatchRequest.findOne({
-      senderId,
-      receiverId,
-      type: "Interest",
-    });
-    if (existingRequest)
-      return res.status(400).json({ message: "Interest already sent" });
+    if (!receiverId) {
+      return res.status(400).json({ message: "receiverId is required" });
+    }
 
+    // ❌ Prevent sending to self
+    if (senderId.toString() === receiverId.toString()) {
+      return res
+        .status(400)
+        .json({ message: "You cannot send interest to yourself" });
+    }
+
+    // ❌ Prevent sending if blocked either way
+    const isBlocked = await hasBlockedBetween(senderId, receiverId);
+    if (isBlocked) {
+      return res
+        .status(403)
+        .json({ message: "You cannot send interest to this user" });
+    }
+
+    // ❌ Prevent duplicate or reverse existing Interest (Pending / Accepted / Blocked)
+    const existingRequest = await MatchRequest.findOne({
+      type: "Interest",
+      $or: [
+        { senderId, receiverId },
+        { senderId: receiverId, receiverId: senderId },
+      ],
+      status: { $in: ["Pending", "Accepted", "Blocked"] },
+    });
+
+    if (existingRequest) {
+      return res
+        .status(400)
+        .json({ message: "Interest already exists between these users" });
+    }
+
+    // ✅ (Optional) You can also disallow resend after Rejected if you want:
+    // const rejectedRequest = await MatchRequest.findOne({
+    //   type: "Interest",
+    //   $or: [
+    //     { senderId, receiverId },
+    //     { senderId: receiverId, receiverId: senderId },
+    //   ],
+    //   status: "Rejected",
+    // });
+    // if (rejectedRequest) {
+    //   return res
+    //     .status(400)
+    //     .json({ message: "Interest was rejected earlier. You cannot resend now." });
+    // }
+
+    // ✅ Create new Interest
     const newRequest = await MatchRequest.create({
       senderId,
       receiverId,
       type: "Interest",
+      // status defaults to "Pending" in model (assuming)
     });
 
     // ✅ Log activity for receiver
-    const senderName = req.user.firstName + " " + req.user.lastName;
+    const senderName = `${req.user.firstName || ""} ${
+      req.user.lastName || ""
+    }`.trim();
     await createActivity(
       receiverId,
       senderId,
@@ -129,9 +291,10 @@ export const sendInterest = async (req, res) => {
       { requestType: "Interest" }
     );
 
-    res
-      .status(201)
-      .json({ message: "Interest sent successfully", request: newRequest });
+    res.status(201).json({
+      message: "Interest sent successfully",
+      request: newRequest,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -143,14 +306,63 @@ export const sendChatRequest = async (req, res) => {
     const { receiverId } = req.body;
     const senderId = req.user._id;
 
+    if (!receiverId) {
+      return res.status(400).json({ message: "receiverId is required" });
+    }
+
+    if (senderId.toString() === receiverId.toString()) {
+      return res
+        .status(400)
+        .json({ message: "You cannot send chat request to yourself" });
+    }
+
+    const isBlocked = await hasBlockedBetween(senderId, receiverId);
+    if (isBlocked) {
+      return res
+        .status(403)
+        .json({ message: "You cannot send chat request to this user" });
+    }
+
+    // ❌ Prevent duplicate/reverse Chat requests (Pending / Accepted / Blocked)
+    const existingChatReq = await MatchRequest.findOne({
+      type: "Chat",
+      $or: [
+        { senderId, receiverId },
+        { senderId: receiverId, receiverId: senderId },
+      ],
+      status: { $in: ["Pending", "Accepted", "Blocked"] },
+    });
+
+    if (existingChatReq) {
+      return res
+        .status(400)
+        .json({ message: "Chat request already exists between these users" });
+    }
+
+    //🔐 OPTIONAL: Allow chat only if there is an accepted Interest
+    const acceptedInterest = await MatchRequest.findOne({
+      type: "Interest",
+      status: "Accepted",
+      $or: [
+        { senderId, receiverId },
+        { senderId: receiverId, receiverId: senderId },
+      ],
+    });
+    if (!acceptedInterest) {
+      return res.status(400).json({
+        message: "You can start a chat only after interest is accepted",
+      });
+    }
+
     const chatReq = await MatchRequest.create({
       senderId,
       receiverId,
       type: "Chat",
     });
 
-    // ✅ Log activity for receiver
-    const senderName = req.user.firstName + " " + req.user.lastName;
+    const senderName = `${req.user.firstName || ""} ${
+      req.user.lastName || ""
+    }`.trim();
     await createActivity(
       receiverId,
       senderId,
@@ -167,13 +379,20 @@ export const sendChatRequest = async (req, res) => {
 };
 
 // 4️⃣ View Profile
-// 4️⃣ View Profile
 export const viewProfile = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id } = req.params; // profile owner userId
     const viewerId = req.user._id;
 
-    // ✅ Fetch viewer user details (FIX for undefined name)
+    // ❌ Blocked? → don't allow viewing
+    const isBlocked = await hasBlockedBetween(viewerId, id);
+    if (isBlocked) {
+      return res
+        .status(403)
+        .json({ message: "You are not allowed to view this profile" });
+    }
+
+    // Fetch viewer user details
     const viewer = await User.findById(viewerId).select("firstName lastName");
     const viewerName = viewer
       ? `${viewer.firstName} ${viewer.lastName}`
@@ -185,7 +404,11 @@ export const viewProfile = async (req, res) => {
       "firstName middleName lastName gender email phone registrationId"
     );
 
-    if (!profile) return res.status(404).json({ message: "Profile not found" });
+    if (!profile) {
+      return res.status(404).json({ message: "Profile not found" });
+    }
+
+    // Optionally you could check: if (!profile.isProfileVisible) return 403
 
     // ⭐ Log activity for profile owner
     await createActivity(
@@ -204,6 +427,7 @@ export const viewProfile = async (req, res) => {
   }
 };
 
+// filter matches
 export const filterMatches = async (req, res) => {
   try {
     const {
@@ -234,6 +458,18 @@ export const filterMatches = async (req, res) => {
     addFilter("designation", profession);
     addFilter("annualIncome", income);
 
+    // 🔹 Exclude profiles you've already interacted with (if logged in)
+    if (req.user?._id) {
+      const userId = req.user._id;
+      const excludedUserIds = await getInteractionExcludedUserIds(userId);
+      query.userId = {
+        $nin: [
+          userId.toString(),
+          ...excludedUserIds.map((id) => id.toString()),
+        ],
+      };
+    }
+
     const skip = (page - 1) * limit;
 
     const matches = await UserProfileDetail.find(query)
@@ -253,68 +489,77 @@ export const filterMatches = async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-};
-
-// ✅ Accept / Reject / Block Interest or Chat Request
+};// ✅ Accept / Reject / Block / Cancel Interest or Chat Request
 export const handleRequestAction = async (req, res) => {
   try {
     const { requestId } = req.params;
-    const { action } = req.body; // "Accepted" | "Rejected" | "Blocked"
-    const userId = req.user._id; // receiver
+    const { action } = req.body; // "Accepted" | "Rejected" | "Blocked" | "Cancelled"
+    const userId = req.user._id;
 
-    // Validate action
-    const validActions = ["Accepted", "Rejected", "Blocked"];
+    const validActions = ["Accepted", "Rejected", "Blocked", "Cancelled"];
     if (!validActions.includes(action)) {
       return res.status(400).json({ message: "Invalid action type" });
     }
 
-    // Find request
     const matchRequest = await MatchRequest.findById(requestId);
     if (!matchRequest) {
       return res.status(404).json({ message: "Request not found" });
     }
 
-    // Only receiver can act
-    if (matchRequest.receiverId.toString() !== userId.toString()) {
-      return res
-        .status(403)
-        .json({ message: "Not authorized to modify this request" });
+    const isSender = matchRequest.senderId.toString() === userId.toString();
+    const isReceiver = matchRequest.receiverId.toString() === userId.toString();
+
+    // 🔥 CASE: Cancel Request → only sender can cancel
+    if (action === "Cancelled") {
+      if (!isSender) {
+        return res.status(403).json({
+          message: "Only the sender can cancel this request",
+        });
+      }
+
+      // Only pending requests can be cancelled
+      if (matchRequest.status !== "Pending") {
+        return res.status(400).json({
+          message: `Cannot cancel a request that is already ${matchRequest.status}`,
+        });
+      }
+
+      matchRequest.status = "Cancelled";
+      await matchRequest.save();
+
+      return res.json({
+        message: "Request cancelled successfully",
+        request: matchRequest,
+      });
     }
 
-    // Update status
+    // 🔥 Accept / Reject / Block → ONLY receiver
+    if (!isReceiver) {
+      return res.status(403).json({
+        message: "Not authorized to modify this request",
+      });
+    }
+
+    // Block allowed anytime
+    if (action !== "Blocked" && matchRequest.status !== "Pending") {
+      return res.status(400).json({
+        message: `Cannot ${action.toLowerCase()} a request that is already ${matchRequest.status}`,
+      });
+    }
+
     matchRequest.status = action;
     await matchRequest.save();
 
-    // ✅ Log activity for sender if accepted
-    if (action === "Accepted") {
-      const receiverName = req.user.firstName + " " + req.user.lastName;
-      const activityType =
-        matchRequest.type === "Interest"
-          ? "InterestAccepted"
-          : "ChatRequestAccepted";
-      const message =
-        matchRequest.type === "Interest"
-          ? `${receiverName} accepted your interest request`
-          : `${receiverName} accepted your chat request`;
-
-      await createActivity(
-        matchRequest.senderId,
-        userId,
-        activityType,
-        message,
-        matchRequest._id,
-        { requestType: matchRequest.type }
-      );
-    }
-
-    res.json({
-      message: `Request ${action.toLowerCase()} successfully.`,
+    return res.json({
+      message: `Request ${action.toLowerCase()} successfully`,
       request: matchRequest,
     });
+
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
+
 
 export const getPendingRequests = async (req, res) => {
   try {
