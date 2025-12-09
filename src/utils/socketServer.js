@@ -109,7 +109,7 @@ socket.on("sendMessage", async (data) => {
     // Emit to room
     io.to(roomId).emit("messageReceived", payload);
 
-    console.log("💬 Message saved & emitted:", payload);
+    //console.log("💬 Message saved & emitted:", payload);
   } catch (err) {
     console.error("❌ sendMessage ERROR:", err);
   }

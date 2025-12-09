@@ -611,6 +611,65 @@ export const handleRequestAction = async (req, res) => {
   }
 };
 
+
+//block user
+export const blockUser = async (req, res) => {
+  try {
+    const blockerId = req.user._id;
+    const blockedUserId = req.params.userId;
+
+    if (!blockedUserId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    // Check if already blocked
+    const existing = await MatchRequest.findOne({
+      type: "Interest",
+      status: "Blocked",
+      $or: [
+        { senderId: blockerId, receiverId: blockedUserId },
+        { senderId: blockedUserId, receiverId: blockerId },
+      ],
+    });
+
+    if (existing) {
+      return res.json({ message: "User already blocked", request: existing });
+    }
+
+    // Create OR update MatchRequest for blocking
+    let request = await MatchRequest.findOne({
+      $or: [
+        { senderId: blockerId, receiverId: blockedUserId },
+        { senderId: blockedUserId, receiverId: blockerId },
+      ],
+    });
+
+    if (!request) {
+      // Create a new block entry
+      request = new MatchRequest({
+        senderId: blockerId,
+        receiverId: blockedUserId,
+        type: "Interest",
+        status: "Blocked",
+      });
+    } else {
+      // Update existing request
+      request.status = "Blocked";
+    }
+
+    await request.save();
+
+    return res.json({
+      message: "User blocked successfully",
+      request,
+    });
+
+  } catch (err) {
+    console.error("Block User Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 export const getPendingRequests = async (req, res) => {
   try {
     const userId = req.user._id;

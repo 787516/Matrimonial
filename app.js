@@ -64,8 +64,6 @@ app.get('/', (req, res) => {
 //   razorpayWebhook
 // );
 
-
-
 connectDB()
   .then(() => {
     server.listen(port, () => {
