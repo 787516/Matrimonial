@@ -1,5 +1,6 @@
 import express from "express";
 import { authMiddleware } from "../middleware/authMiddleware.js";
+import { subscriptionMiddleware } from "../middleware/subscriptionMiddleware.js"
 import {
   getMatchFeed,
   sendInterest,
@@ -15,9 +16,9 @@ import {
 const router = express.Router();
 
 router.get("/feed", authMiddleware, getMatchFeed);
-router.post("/interest", authMiddleware, sendInterest);
-router.post("/chat-request", authMiddleware, sendChatRequest);
-router.get("/view/:id", authMiddleware, viewProfile);
+router.post("/interest", authMiddleware, subscriptionMiddleware, sendInterest);
+router.post("/chat-request", authMiddleware,subscriptionMiddleware, sendChatRequest);
+router.get("/view/:id", authMiddleware,subscriptionMiddleware, viewProfile);
 router.get("/filter", authMiddleware, filterMatches);
 // Get pending requests
 router.get("/requests/pending", authMiddleware, getPendingRequests);

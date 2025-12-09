@@ -13,7 +13,7 @@ const userSubscriptionSchema = new mongoose.Schema(
       ref: "SubscriptionPlan",
       required: true,
     },
-
+    
     // Razorpay Payment Link
     paymentLinkId: { type: String }, // from Razorpay
     paymentId: { type: String }, // Razorpay payment id after success

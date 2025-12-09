@@ -25,7 +25,18 @@ app.use(
   })
 );
 
-import bodyParser from "body-parser";
+app.post(
+  "/api/subscription/webhook",
+  express.raw({ type: "application/json" }),
+  (req, res, next) => {
+    console.log("🔥🔥 WEBHOOK ROUTE HIT");
+    next();
+  },
+  razorpayWebhook
+);
+
+
+
 
 app.use(express.json());
 const server = http.createServer(app);
@@ -47,11 +58,13 @@ app.get('/', (req, res) => {
 });
 
 // Raw body only for this webhook route
-app.post(
-  "/api/subscription/webhook",
-  bodyParser.raw({ type: "application/json" }),
-  razorpayWebhook
-);
+// app.post(
+//   "/api/subscription/webhook",
+//   bodyParser.raw({ type: "application/json" }),
+//   razorpayWebhook
+// );
+
+
 
 connectDB()
   .then(() => {

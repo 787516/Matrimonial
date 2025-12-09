@@ -4,52 +4,48 @@ import UserSubscription from "../models/userSubscriptionModel.js";
 
 export const createPaymentLink = async (req, res) => {
   try {
-    
-    const userId = req.user._id; // from your auth middleware
+    const userId = req.user._id;
     const { planId } = req.body;
 
     const plan = await SubscriptionPlan.findById(planId);
-    if (!plan) return res.status(404).json({ message: "Plan not found" });
+    if (!plan) {
+      return res.status(404).json({ message: "Plan not found" });
+    }
 
-    // 1. Create payment link on Razorpay
+    // Create Razorpay payment link
     const paymentLink = await razorpayInstance.paymentLink.create({
-      amount: plan.price * 100, // INR → paise
+      amount: plan.price * 100,
       currency: "INR",
       description: `Payment for ${plan.name} plan`,
       customer: {
         name: req.user.firstName || "User",
         email: req.user.email,
-        contact: req.user.phone, // make sure you store this
+        contact: req.user.phone,
       },
       callback_url: `http://localhost:5173/payment-result`,
       callback_method: "get",
     });
 
-    // 2. Create or update a subscription record with Pending status
-    const subscription = await UserSubscription.findOneAndUpdate(
-      { userId, planId, status: "Pending" },
-      {
-        userId,
-        planId,
-        paymentLinkId: paymentLink.id,
-        status: "Pending",
-      },
-      { upsert: true, new: true }
-    );
+    // ALWAYS create a new subscription record
+    const subscription = await UserSubscription.create({
+      userId,
+      planId,
+      paymentLinkId: paymentLink.id,
+      status: "Pending",
+    });
 
     return res.json({
       success: true,
       paymentLinkUrl: paymentLink.short_url,
       subscriptionId: subscription._id,
     });
-       console.log("▶️ createPaymentLink CALLED");
-    console.log("Received planId:", req.body.planId);
-    console.log("User:", req.user);
+
   } catch (error) {
     console.error("Error creating payment link:", error);
     res.status(500).json({ message: "Something went wrong" });
   }
 };
+
 
 export const getMySubscription = async (req, res) => {
   try {

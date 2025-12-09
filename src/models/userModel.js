@@ -237,6 +237,8 @@ const userSchema = new mongoose.Schema(
       type: String,
       unique: true,
     },
+    profileViewCount: { type: Number, default: 0 },
+
 
     deleteReason: {
       reason: { type: String },

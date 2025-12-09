@@ -45,12 +45,16 @@ const hasBlockedBetween = async (userAId, userBId) => {
   return !!blocked;
 };
 
-//get match feed
 export const getMatchFeed = async (req, res) => {
   try {
     const userId = req.user._id;
 
-    // 1️⃣ Load current user + profile
+    // Pagination
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Current user + profile
     const currentUser = await User.findById(userId);
     const currentProfile = await UserProfileDetail.findOne({ userId });
 
@@ -61,148 +65,160 @@ export const getMatchFeed = async (req, res) => {
     const oppositeGender =
       currentUser.gender?.toLowerCase() === "male" ? "female" : "male";
 
-    // 2️⃣ Exclude: self + ALL interacted users (sent/received/blocked/rejected)
+    // Exclude users whom current user interacted with
     const excludedUserIds = await getInteractionExcludedUserIds(userId);
-    const excludedSet = new Set([
-      userId.toString(),
-      ...excludedUserIds.map((id) => id.toString()),
-    ]);
+    const excludedSet = new Set([userId.toString(), ...excludedUserIds]);
 
-    // 3️⃣ Fetch opposite gender profiles + JOIN user
-    const allOppProfiles = await UserProfileDetail.find({
+    // 1️⃣ Load ALL valid opposite-gender profiles (NO pagination yet!)
+    const allCandidates = await UserProfileDetail.find({
       isProfileVisible: true,
-      // don't show self or already interacted users
       userId: { $nin: Array.from(excludedSet) },
     })
       .populate("userId", "firstName lastName email gender registrationId")
       .lean();
 
-    // 4️⃣ Filter by gender from userId (User model)
-    let genderMatched = allOppProfiles.filter(
-      (p) =>
-        p.userId?.gender &&
-        p.userId.gender.toLowerCase() === oppositeGender.toLowerCase()
+    // Apply gender filter
+    let validProfiles = allCandidates.filter(
+      (p) => p.userId?.gender?.toLowerCase() === oppositeGender
     );
 
-    // 5️⃣ Respect *other user's* partner preferences (basic fields)
-    const filteredByOtherPrefs = [];
-    for (const p of genderMatched) {
-      const otherPref = await UserPartnerPreference.findOne({
-        userProfileId: p._id,
-      }).lean();
+    // 2️⃣ Apply OTHER USER's PARTNER preference
+    const otherPrefs = await UserPartnerPreference.find({
+      userProfileId: { $in: validProfiles.map((p) => p._id) },
+    }).lean();
 
-      // If they have no preference → allow
-      if (!otherPref) {
-        filteredByOtherPrefs.push(p);
-        continue;
-      }
+    const prefMap = {};
+    otherPrefs.forEach((pref) => {
+      prefMap[pref.userProfileId] = pref;
+    });
 
-      // If they DO have preferences → current user MUST match them
+    validProfiles = validProfiles.filter((p) => {
+      const pref = prefMap[p._id];
+      if (!pref) return true;
+
+      if (pref.religion && !equalsCI(currentProfile.religion, pref.religion))
+        return false;
+
       if (
-        otherPref.religion &&
-        !equalsCI(currentProfile.religion, otherPref.religion)
+        pref.motherTongue &&
+        !equalsCI(currentProfile.motherTongue, pref.motherTongue)
       )
-        continue;
-      if (
-        otherPref.motherTongue &&
-        !equalsCI(currentProfile.motherTongue, otherPref.motherTongue)
-      )
-        continue;
-      if (otherPref.city && !equalsCI(currentProfile.city, otherPref.city))
-        continue;
+        return false;
 
-      filteredByOtherPrefs.push(p);
-    }
+      if (pref.city && !equalsCI(currentProfile.city, pref.city)) return false;
 
-    // 6️⃣ Attach profilePhoto (from profile OR gallery)
-    // 6️⃣ Attach flags + profile photo
-    for (const p of filteredByOtherPrefs) {
-      const otherUserId = p.userId?._id?.toString();
+      return true;
+    });
 
-      // A. Profile Photo
-      if (!p.profilePhoto) {
-        const gallery = await UserPhotoGallery.find({
-          userProfileId: p._id,
-          isProfilePhoto: true,
-        });
-        p.profilePhoto = gallery?.[0]?.imageUrl || null;
-      }
+    // 3️⃣ Attach profile photo in ONE query
+    const galleryPhotos = await UserPhotoGallery.find({
+      userProfileId: { $in: validProfiles.map((p) => p._id) },
+      isProfilePhoto: true,
+    }).lean();
 
-      // B. Has Sent Interest
-      const sentInterest = await MatchRequest.findOne({
-        senderId: userId,
-        receiverId: otherUserId,
-        type: "Interest",
-        status: { $in: ["Pending", "Accepted"] },
-      }).lean();
+    const photoMap = {};
+    galleryPhotos.forEach((g) => {
+      photoMap[g.userProfileId] = g.imageUrl;
+    });
 
-      p.hasSentInterest = !!sentInterest;
+    // 4️⃣ Attach interest + block flags in BULK queries
+    const ids = validProfiles.map((p) => p.userId._id);
 
-      // C. Has Received Interest
-      const receivedInterest = await MatchRequest.findOne({
-        senderId: otherUserId,
-        receiverId: userId,
-        type: "Interest",
-        status: { $in: ["Pending"] },
-      }).lean();
+    const sent = await MatchRequest.find({
+      senderId: userId,
+      receiverId: { $in: ids },
+      type: "Interest",
+      status: { $in: ["Pending", "Accepted"] },
+    });
 
-      p.hasReceivedInterest = !!receivedInterest;
+    const received = await MatchRequest.find({
+      senderId: { $in: ids },
+      receiverId: userId,
+      type: "Interest",
+      status: "Pending",
+    });
 
-      // D. Is Blocked (either way)
-      const isBlocked = await MatchRequest.findOne({
-        type: "Interest",
-        status: "Blocked",
-        $or: [
-          { senderId: userId, receiverId: otherUserId },
-          { senderId: otherUserId, receiverId: userId },
-        ],
-      }).lean();
+    const blocked = await MatchRequest.find({
+      type: "Interest",
+      status: "Blocked",
+      $or: [
+        { senderId: userId, receiverId: { $in: ids } },
+        { senderId: { $in: ids }, receiverId: userId },
+      ],
+    });
 
-      p.isBlocked = !!isBlocked;
-    }
+    const sentSet = new Set(sent.map((x) => x.receiverId.toString()));
+    const receivedSet = new Set(received.map((x) => x.senderId.toString()));
+    const blockedPairs = new Set(
+      blocked.map((x) => `${x.senderId.toString()}-${x.receiverId.toString()}`)
+    );
 
-    // 7️⃣ Previous matching logic (unchanged, but uses filteredByOtherPrefs)
+    // Attach metadata
+    validProfiles = validProfiles.map((p) => {
+      const uid = p.userId._id.toString();
+
+      return {
+        ...p,
+        profilePhoto: photoMap[p._id] || p.profilePhoto || null,
+        hasSentInterest: sentSet.has(uid),
+        hasReceivedInterest: receivedSet.has(uid),
+        isBlocked:
+          blockedPairs.has(`${userId}-${uid}`) ||
+          blockedPairs.has(`${uid}-${userId}`),
+      };
+    });
+
+    // 5️⃣ Category logic (no change, just applied after filtering)
     const used = new Set();
-
-    let perfectMatches = [];
     const preference = await UserPartnerPreference.findOne({
       userProfileId: currentProfile._id,
     });
 
-    if (preference) {
-      perfectMatches = filteredByOtherPrefs.filter((p) => {
-        return (
-          (!preference.religion || equalsCI(p.religion, preference.religion)) &&
-          (!preference.motherTongue ||
-            equalsCI(p.motherTongue, preference.motherTongue)) &&
-          (!preference.city || equalsCI(p.city, preference.city))
-        );
-      });
+    const perfectMatches = preference
+      ? validProfiles.filter((p) => {
+          if (
+            (preference.religion &&
+              !equalsCI(p.religion, preference.religion)) ||
+            (preference.motherTongue &&
+              !equalsCI(p.motherTongue, preference.motherTongue)) ||
+            (preference.city && !equalsCI(p.city, preference.city))
+          ) {
+            return false;
+          }
+          used.add(p._id.toString());
+          return true;
+        })
+      : [];
 
-      perfectMatches.forEach((m) => used.add(m._id.toString()));
-    }
-
-    const religionMatches = filteredByOtherPrefs.filter(
+    const religionMatches = validProfiles.filter(
       (p) =>
         !used.has(p._id.toString()) &&
         equalsCI(p.religion, currentProfile.religion)
     );
+
     religionMatches.forEach((m) => used.add(m._id.toString()));
 
-    const locationMatches = filteredByOtherPrefs.filter(
+    const locationMatches = validProfiles.filter(
       (p) =>
         !used.has(p._id.toString()) &&
         (equalsCI(p.city, currentProfile.city) ||
           equalsCI(p.state, currentProfile.state))
     );
+
     locationMatches.forEach((m) => used.add(m._id.toString()));
 
-    const fallbackMatches = filteredByOtherPrefs.filter(
+    const fallbackMatches = validProfiles.filter(
       (p) => !used.has(p._id.toString())
     );
 
-    return res.status(200).json({
-      message: "Matches fetched successfully",
+    // 6️⃣ Apply pagination AFTER filtering
+    const paginated = validProfiles.slice(skip, skip + limit);
+
+    res.json({
+      page,
+      limit,
+      totalProfiles: validProfiles.length,
+      totalPages: Math.ceil(validProfiles.length / limit),
       perfectMatches,
       religionMatches,
       locationMatches,
@@ -210,7 +226,7 @@ export const getMatchFeed = async (req, res) => {
     });
   } catch (err) {
     console.error("MatchFeed Error:", err);
-    return res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -306,6 +322,15 @@ export const sendChatRequest = async (req, res) => {
     const { receiverId } = req.body;
     const senderId = req.user._id;
 
+    const sub = req.subscription; // injected by subscriptionMiddleware
+
+    if (!sub || !sub.planId.features.chatAllowed) {
+      return res.status(403).json({
+        message:
+          "Your plan does not allow chat. Please upgrade your membership.",
+      });
+    }
+
     if (!receiverId) {
       return res.status(400).json({ message: "receiverId is required" });
     }
@@ -378,54 +403,79 @@ export const sendChatRequest = async (req, res) => {
   }
 };
 
-// 4️⃣ View Profile
+//view profile
 export const viewProfile = async (req, res) => {
   try {
-    const { id } = req.params; // profile owner userId
+    const { id } = req.params; 
     const viewerId = req.user._id;
 
-    // ❌ Blocked? → don't allow viewing
-    const isBlocked = await hasBlockedBetween(viewerId, id);
-    if (isBlocked) {
-      return res
-        .status(403)
-        .json({ message: "You are not allowed to view this profile" });
+    const sub = req.subscription; // FREE or PAID subscription
+
+    if (!sub || !sub.planId) {
+      return res.status(403).json({
+        message: "You do not have an active subscription. Please upgrade your membership."
+      });
     }
 
-    // Fetch viewer user details
-    const viewer = await User.findById(viewerId).select("firstName lastName");
-    const viewerName = viewer
-      ? `${viewer.firstName} ${viewer.lastName}`
-      : "Someone";
+    const features = sub.planId.features;
 
-    // Fetch viewed profile
+    // ⭐ Unlimited plan: skip all counting checks
+    const unlimited = features.unlimitedProfileViews === true;
+
+    // ⭐ Current view count
+    const viewer = await User.findById(viewerId);
+    const viewCount = viewer.profileViewCount || 0;
+
+    // ⭐ Check limit (ONLY if not unlimited)
+    if (!unlimited && viewCount >= features.maxProfileViews) {
+      return res.status(403).json({
+        message: `You have reached your limit of ${features.maxProfileViews} profile views. Please upgrade your membership.`,
+      });
+    }
+
+    // ❌ Check if either user blocked the other
+    const isBlocked = await hasBlockedBetween(viewerId, id);
+    if (isBlocked) {
+      return res.status(403).json({ message: "You are not allowed to view this profile" });
+    }
+
+    // ⭐ Fetch viewed profile
     const profile = await UserProfileDetail.findOne({ userId: id }).populate(
       "userId",
-      "firstName middleName lastName gender email phone registrationId"
+      "firstName lastName gender email phone registrationId"
     );
 
     if (!profile) {
       return res.status(404).json({ message: "Profile not found" });
     }
 
-    // Optionally you could check: if (!profile.isProfileVisible) return 403
+    // ⭐ Increase view count only AFTER all validation passes
+    if (!unlimited) {
+      await User.findByIdAndUpdate(viewerId, {
+        $inc: { profileViewCount: 1 }
+      });
+    }
 
-    // ⭐ Log activity for profile owner
+    // ⭐ Log activity
+    const viewerName = `${viewer.firstName} ${viewer.lastName}`;
     await createActivity(
-      id, // receiver (profile owner)
-      viewerId, // sender
+      id,
+      viewerId,
       "ProfileViewed",
       `${viewerName} viewed your profile`
     );
 
-    res.json({
+    return res.json({
       message: "Profile viewed successfully",
       profile,
     });
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.log("View profile error:", err);
+    return res.status(500).json({ error: err.message });
   }
 };
+
 
 // filter matches
 export const filterMatches = async (req, res) => {
@@ -489,7 +539,7 @@ export const filterMatches = async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-};// ✅ Accept / Reject / Block / Cancel Interest or Chat Request
+}; // ✅ Accept / Reject / Block / Cancel Interest or Chat Request
 export const handleRequestAction = async (req, res) => {
   try {
     const { requestId } = req.params;
@@ -543,7 +593,9 @@ export const handleRequestAction = async (req, res) => {
     // Block allowed anytime
     if (action !== "Blocked" && matchRequest.status !== "Pending") {
       return res.status(400).json({
-        message: `Cannot ${action.toLowerCase()} a request that is already ${matchRequest.status}`,
+        message: `Cannot ${action.toLowerCase()} a request that is already ${
+          matchRequest.status
+        }`,
       });
     }
 
@@ -554,12 +606,10 @@ export const handleRequestAction = async (req, res) => {
       message: `Request ${action.toLowerCase()} successfully`,
       request: matchRequest,
     });
-
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
-
 
 export const getPendingRequests = async (req, res) => {
   try {
