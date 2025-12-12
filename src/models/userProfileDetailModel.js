@@ -98,8 +98,8 @@ const profileSchema = new mongoose.Schema(
 
     diet: { type: String, trim: true, lowercase: true },
 
-    smoking: { type: String, trim: true, lowercase: true, default: "no" },
-    drinking: { type: String, trim: true, lowercase: true, default: "no" },
+    smoking: { type: String, trim: true, lowercase: true,  },
+    drinking: { type: String, trim: true, lowercase: true,  },
 
     /* ----------------------------------------------------
        FAMILY
@@ -116,7 +116,7 @@ const profileSchema = new mongoose.Schema(
     noOfSisters: { type: Number, min: 0, max: 15 },
     marriedSisters: { type: Number, min: 0, max: 15 },
 
-    familyType: { type: String, trim: true, lowercase: true, default: "nuclear" },
+    familyType: { type: String, trim: true, lowercase: true,  },
 
     /* ----------------------------------------------------
        RELIGIOUS
@@ -216,15 +216,12 @@ const profileSchema = new mongoose.Schema(
 // Normalize everything before saving
 profileSchema.pre("save", function (next) {
   if (this.profileFor) this.profileFor = this.profileFor.toLowerCase().trim();
-  if (this.profileCreatedBy)
-    this.profileCreatedBy = this.profileCreatedBy.toLowerCase().trim();
+  if (this.profileCreatedBy)this.profileCreatedBy = this.profileCreatedBy.toLowerCase().trim();
   if (this.gender) this.gender = this.gender.toLowerCase().trim();
-
   if (this.country) this.country = this.country.toLowerCase().trim();
   if (this.state) this.state = this.state.toLowerCase().trim();
   if (this.city) this.city = this.city.toLowerCase().trim();
   if (this.area) this.area = this.area.toLowerCase().trim();
-
   next();
 });
 

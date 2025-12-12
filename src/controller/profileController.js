@@ -14,7 +14,7 @@ export const getUserProfile = async (req, res) => {
 
     const profile = await UserProfileDetail.findOne({ userId })
       .populate("userId", 
-        "firstName lastName email phone gender dateOfBirth maritalStatus"
+        "firstName middleName lastName email phone gender dateOfBirth maritalStatus"
       )
       .lean(); // important to modify the object
 
@@ -107,7 +107,7 @@ function calculateProfileCompletion(profile) {
     profile.diet,
     profile.smoking,
     profile.drinking,
-    profile.fatherName,
+    profile.middleName,
     profile.fatherOccupation,
     profile.motherName,
     profile.motherOccupation,

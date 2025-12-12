@@ -3,6 +3,7 @@ import { authMiddleware } from "../middleware/authMiddleware.js";
 import { subscriptionMiddleware } from "../middleware/subscriptionMiddleware.js"
 import {
   getMatchFeed,
+  getOppositeGenderProfiles,
   sendInterest,
   sendChatRequest,
   viewProfile,
@@ -17,6 +18,8 @@ import {
 const router = express.Router();
 
 router.get("/feed", authMiddleware, getMatchFeed);
+router.get("/opposite-gender", authMiddleware, getOppositeGenderProfiles);
+
 router.post("/interest", authMiddleware, subscriptionMiddleware, sendInterest);
 router.post("/chat-request", authMiddleware,subscriptionMiddleware, sendChatRequest);
 router.get("/view/:id", authMiddleware,subscriptionMiddleware, viewProfile);

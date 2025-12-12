@@ -49,7 +49,7 @@ export const getMatchFeed = async (req, res) => {
   try {
     const userId = req.user._id;
 
-    // Pagination
+    // Pagination (kept for metadata; categories preserved)
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 10;
     const skip = (page - 1) * limit;
@@ -82,7 +82,7 @@ export const getMatchFeed = async (req, res) => {
       (p) => p.userId?.gender?.toLowerCase() === oppositeGender
     );
 
-    // 2️⃣ Apply OTHER USER's PARTNER preference
+    // 2️⃣ Apply OTHER USER's PARTNER preference (as filter)
     const otherPrefs = await UserPartnerPreference.find({
       userProfileId: { $in: validProfiles.map((p) => p._id) },
     }).lean();
@@ -153,7 +153,7 @@ export const getMatchFeed = async (req, res) => {
       blocked.map((x) => `${x.senderId.toString()}-${x.receiverId.toString()}`)
     );
 
-    // Attach metadata
+    // Attach metadata & profilePhoto placeholder
     validProfiles = validProfiles.map((p) => {
       const uid = p.userId._id.toString();
 
@@ -168,57 +168,140 @@ export const getMatchFeed = async (req, res) => {
       };
     });
 
-    // 5️⃣ Category logic (no change, just applied after filtering)
-    const used = new Set();
+    // ---------------------------
+    // 5️⃣ Scoring using CURRENT USER'S preference (age has stronger weight)
+    // ---------------------------
+
     const preference = await UserPartnerPreference.findOne({
       userProfileId: currentProfile._id,
     });
 
-    const perfectMatches = preference
-      ? validProfiles.filter((p) => {
-          if (
-            (preference.religion &&
-              !equalsCI(p.religion, preference.religion)) ||
-            (preference.motherTongue &&
-              !equalsCI(p.motherTongue, preference.motherTongue)) ||
-            (preference.city && !equalsCI(p.city, preference.city))
-          ) {
-            return false;
-          }
-          used.add(p._id.toString());
-          return true;
-        })
-      : [];
+    // Helper: age calculation
+    const getAge = (dob) => {
+      if (!dob) return null;
+      const birth = new Date(dob);
+      return Math.floor((Date.now() - birth) / (365.25 * 24 * 60 * 60 * 1000));
+    };
 
-    const religionMatches = validProfiles.filter(
-      (p) =>
-        !used.has(p._id.toString()) &&
-        equalsCI(p.religion, currentProfile.religion)
+    // Compute matchPercentage for every valid profile
+    // Weight scheme (total dynamic based on which pref fields exist):
+    // AGE: 35 (strong)
+    // HEIGHT: 15
+    // RELIGION: 20
+    // CASTE: 15
+    // MOTHER_TONGUE: 10
+    // CITY: 10
+    // STATE: 5
+    // (Only increment maxScore when pref field exists)
+    const scoredProfiles = validProfiles.map((p) => {
+      let score = 0;
+      let maxScore = 0;
+
+      if (preference?.ageRange) {
+        maxScore += 45;
+        const age = getAge(p.dateOfBirth);
+        if (
+          age !== null &&
+          age >= Number(preference.ageRange.min) &&
+          age <= Number(preference.ageRange.max)
+        ) {
+          score += 45;
+        }
+      }
+
+      if (preference?.heightRange) {
+        maxScore += 15;
+        const h = Number(p.height);
+        if (!Number.isNaN(h) && h >= Number(preference.heightRange.min) && h <= Number(preference.heightRange.max)) {
+          score += 15;
+        }
+      }
+
+      if (preference?.religion) {
+        maxScore += 20;
+        if (equalsCI(p.religion, preference.religion)) score += 20;
+      }
+
+      if (preference?.caste) {
+        maxScore += 15;
+        if (equalsCI(p.caste, preference.caste)) score += 15;
+      }
+
+      if (preference?.motherTongue) {
+        maxScore += 10;
+        if (equalsCI(p.motherTongue, preference.motherTongue)) score += 10;
+      }
+
+      if (preference?.city) {
+        maxScore += 10;
+        if (equalsCI(p.city, preference.city)) score += 10;
+      }
+
+      if (preference?.state) {
+        maxScore += 5;
+        if (equalsCI(p.state, preference.state)) score += 5;
+      }
+
+      // Avoid division by zero
+      const percentage = maxScore ? Math.round((score / maxScore) * 100) : 0;
+
+      return {
+        ...p,
+        matchPercentage: percentage,
+      };
+    });
+
+    // 5️⃣ Category logic (preserve categories, but use matchPercentage and sort inside)
+    const used = new Set();
+
+    // perfectMatches: those meeting your preference well (threshold 60)
+    const perfectMatches = [];
+    const others = [];
+
+    scoredProfiles.forEach((p) => {
+      if (p.matchPercentage >= 60) {
+        perfectMatches.push(p);
+        used.add(p._id.toString());
+      } else {
+        others.push(p);
+      }
+    });
+
+    // religionMatches: same religion (and not already used)
+    const religionMatches = scoredProfiles.filter(
+      (p) => !used.has(p._id.toString()) && equalsCI(p.religion, currentProfile.religion)
     );
 
     religionMatches.forEach((m) => used.add(m._id.toString()));
 
-    const locationMatches = validProfiles.filter(
+    // locationMatches: same city or state (and not used)
+    const locationMatches = scoredProfiles.filter(
       (p) =>
         !used.has(p._id.toString()) &&
-        (equalsCI(p.city, currentProfile.city) ||
-          equalsCI(p.state, currentProfile.state))
+        (equalsCI(p.city, currentProfile.city) || equalsCI(p.state, currentProfile.state))
     );
-
+    
     locationMatches.forEach((m) => used.add(m._id.toString()));
 
-    const fallbackMatches = validProfiles.filter(
-      (p) => !used.has(p._id.toString())
-    );
+    // fallback: everything else not used
+    const fallbackMatches = scoredProfiles.filter((p) => !used.has(p._id.toString()));
 
-    // 6️⃣ Apply pagination AFTER filtering
-    const paginated = validProfiles.slice(skip, skip + limit);
+    // ---------------------------
+    // Sort each category by matchPercentage DESC
+    // ---------------------------
+    perfectMatches.sort((a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0));
+    religionMatches.sort((a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0));
+    locationMatches.sort((a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0));
+    fallbackMatches.sort((a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0));
+
+    // 6️⃣ Apply pagination meta (we keep categories intact; page & totalPages returned)
+    const totalProfiles = validProfiles.length;
 
     res.json({
       page,
       limit,
-      totalProfiles: validProfiles.length,
-      totalPages: Math.ceil(validProfiles.length / limit),
+      totalProfiles,
+      totalPages: Math.ceil(totalProfiles / limit),
       perfectMatches,
       religionMatches,
       locationMatches,
@@ -226,6 +309,108 @@ export const getMatchFeed = async (req, res) => {
     });
   } catch (err) {
     console.error("MatchFeed Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
+//opposite gender API
+export const getOppositeGenderProfiles = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    // 1️⃣ Load current user
+    const currentUser = await User.findById(userId);
+    const oppositeGender =
+      currentUser.gender?.toLowerCase() === "male" ? "female" : "male";
+
+    // 2️⃣ Get all opposite-gender USERS
+    const oppositeUserIds = await User.find({
+      gender: oppositeGender,
+      status: "Active", // optional: recommended
+    }).distinct("_id");
+
+    // 3️⃣ Get all opposite-gender PROFILES
+    let allProfiles = await UserProfileDetail.find({
+      userId: { $in: oppositeUserIds },
+      isProfileVisible: true,
+    })
+      .populate(
+        "userId",
+        "firstName lastName profilePhoto gender email registrationId "
+      )
+      .lean();
+
+    // 4️⃣ Remove BLOCKED users
+    const blocked = await MatchRequest.find({
+      status: "Blocked",
+      $or: [{ senderId: userId }, { receiverId: userId }],
+    });
+
+    const blockedIds = new Set();
+    blocked.forEach((r) => {
+      blockedIds.add(String(r.senderId));
+      blockedIds.add(String(r.receiverId));
+    });
+
+    blockedIds.delete(String(userId));
+
+    allProfiles = allProfiles.filter(
+      (p) => !blockedIds.has(String(p.userId._id))
+    );
+
+    // 5️⃣ Pagination AFTER filtering
+    const total = allProfiles.length;
+    const profiles = allProfiles.slice(skip, skip + limit);
+
+    // 6️⃣ Attach photos
+    const gallery = await UserPhotoGallery.find({
+      userProfileId: profiles.map((p) => p._id),
+      isProfilePhoto: true,
+    });
+
+    const photoMap = {};
+    gallery.forEach((g) => (photoMap[g.userProfileId] = g.imageUrl));
+
+    // 7️⃣ Interest flags
+    const ids = profiles.map((p) => String(p.userId._id));
+
+    const sent = await MatchRequest.find({
+      senderId: userId,
+      receiverId: { $in: ids },
+      type: "Interest",
+    });
+
+    const received = await MatchRequest.find({
+      senderId: { $in: ids },
+      receiverId: userId,
+      type: "Interest",
+    });
+
+    const sentSet = new Set(sent.map((r) => String(r.receiverId)));
+    const receivedSet = new Set(received.map((r) => String(r.senderId)));
+
+    const finalProfiles = profiles.map((p) => ({
+      ...p,
+      profilePhoto: p.profilePhoto || photoMap[p._id] || null, // ✅ FIX
+      hasSentInterest: sentSet.has(String(p.userId._id)),
+      hasReceivedInterest: receivedSet.has(String(p.userId._id)),
+      isBlocked: false,
+    }));
+
+    res.json({
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      profiles: finalProfiles,
+    });
+  } catch (err) {
+    console.error("Opposite Gender Error:", err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -406,14 +591,15 @@ export const sendChatRequest = async (req, res) => {
 //view profile
 export const viewProfile = async (req, res) => {
   try {
-    const { id } = req.params; 
+    const { id } = req.params;
     const viewerId = req.user._id;
 
     const sub = req.subscription; // FREE or PAID subscription
 
     if (!sub || !sub.planId) {
       return res.status(403).json({
-        message: "You do not have an active subscription. Please upgrade your membership."
+        message:
+          "You do not have an active subscription. Please upgrade your membership.",
       });
     }
 
@@ -436,7 +622,9 @@ export const viewProfile = async (req, res) => {
     // ❌ Check if either user blocked the other
     const isBlocked = await hasBlockedBetween(viewerId, id);
     if (isBlocked) {
-      return res.status(403).json({ message: "You are not allowed to view this profile" });
+      return res
+        .status(403)
+        .json({ message: "You are not allowed to view this profile" });
     }
 
     // ⭐ Fetch viewed profile
@@ -452,7 +640,7 @@ export const viewProfile = async (req, res) => {
     // ⭐ Increase view count only AFTER all validation passes
     if (!unlimited) {
       await User.findByIdAndUpdate(viewerId, {
-        $inc: { profileViewCount: 1 }
+        $inc: { profileViewCount: 1 },
       });
     }
 
@@ -469,13 +657,11 @@ export const viewProfile = async (req, res) => {
       message: "Profile viewed successfully",
       profile,
     });
-
   } catch (err) {
     console.log("View profile error:", err);
     return res.status(500).json({ error: err.message });
   }
 };
-
 
 // filter matches
 export const filterMatches = async (req, res) => {
@@ -540,6 +726,7 @@ export const filterMatches = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 }; // ✅ Accept / Reject / Block / Cancel Interest or Chat Request
+
 export const handleRequestAction = async (req, res) => {
   try {
     const { requestId } = req.params;
@@ -611,7 +798,6 @@ export const handleRequestAction = async (req, res) => {
   }
 };
 
-
 //block user
 export const blockUser = async (req, res) => {
   try {
@@ -663,7 +849,6 @@ export const blockUser = async (req, res) => {
       message: "User blocked successfully",
       request,
     });
-
   } catch (err) {
     console.error("Block User Error:", err);
     res.status(500).json({ error: err.message });
@@ -754,6 +939,11 @@ export const getDashboardStats = async (req, res) => {
 
 export const getDashboardRequestList = async (req, res) => {
   try {
+    if (!req.user || !req.user._id) {
+      return res
+        .status(401)
+        .json({ error: "Unauthorized - Missing user token" });
+    }
     const userId = req.user._id;
 
     let { type, status } = req.query;
@@ -793,12 +983,16 @@ export const getDashboardRequestList = async (req, res) => {
       const otherUser =
         type === "received" ? reqItem.senderId : reqItem.receiverId;
 
-      // Fetch profile details (location, language, age, etc.)
+      // 🚨 Skip invalid requests
+      if (!otherUser || !otherUser._id) {
+        console.warn("Invalid MatchRequest detected:", reqItem);
+        continue;
+      }
+
       const profileDetails = await UserProfileDetail.findOne({
         userId: otherUser._id,
       }).lean();
 
-      // Fetch profile photo
       const photo = await UserPhotoGallery.findOne({
         userProfileId: otherUser._id,
         isProfilePhoto: true,
