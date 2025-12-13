@@ -31,7 +31,7 @@ export const initializeSocket = (server) => {
   const onlineUsers = new Set();
 
   io.on("connection", (socket) => {
-    console.log(`⚡ Socket connected: ${socket.id}`);
+   // console.log(`⚡ Socket connected: ${socket.id}`);
 
     // Client should emit 'userOnline' with their userId after connecting
     socket.on("userOnline", ({ userId }) => {
@@ -40,7 +40,7 @@ export const initializeSocket = (server) => {
       onlineUsers.add(userId.toString());
       // broadcast updated online users list
       io.emit("getOnlineUsers", Array.from(onlineUsers));
-      console.log(`👤 User online: ${userId}`);
+    //  console.log(`👤 User online: ${userId}`);
     });
 
     // Clean up on disconnect
@@ -48,7 +48,7 @@ export const initializeSocket = (server) => {
       if (socket.userId) {
         onlineUsers.delete(socket.userId.toString());
         io.emit("getOnlineUsers", Array.from(onlineUsers));
-        console.log(`❌ User disconnected: ${socket.userId}`);
+      //  console.log(`❌ User disconnected: ${socket.userId}`);
       } else {
         console.log(`❌ Socket disconnected: ${socket.id}`);
       }
@@ -58,7 +58,7 @@ export const initializeSocket = (server) => {
     socket.on("joinChat", async ({ firstName, userId, targetUserId }) => {
       const roomId = getSecretRoomId(userId, targetUserId);
       socket.join(roomId);
-      console.log(`${firstName || userId} joined Room: ${roomId}`);
+    //  console.log(`${firstName || userId} joined Room: ${roomId}`);
     });
 
     // Send a message event

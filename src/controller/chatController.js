@@ -247,3 +247,38 @@ export const deleteMessage = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+export const deleteChatRoom = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const userId = req.user._id;
+
+    // Find room
+    const room = await ChatRoom.findById(roomId);
+    if (!room) {
+      return res.status(404).json({ message: "Chat room not found" });
+    }
+
+    // Only participants can delete chat
+    const isParticipant = room.participants.some(
+      (p) => p.toString() === userId.toString()
+    );
+
+    if (!isParticipant) {
+      return res.status(403).json({
+        message: "You are not allowed to delete this chat",
+      });
+    }
+
+    // Delete all messages in room
+    await Message.deleteMany({ chatRoomId: roomId });
+
+    // Delete room
+    await ChatRoom.findByIdAndDelete(roomId);
+
+    res.json({ message: "Chat deleted successfully" });
+  } catch (err) {
+    console.error("Delete chat error:", err);
+    res.status(500).json({ error: "Failed to delete chat room" });
+  }
+};

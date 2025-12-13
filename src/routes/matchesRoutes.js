@@ -31,7 +31,6 @@ router.patch("/requests/:requestId", authMiddleware, handleRequestAction);
 //only block
 router.patch("/matches/block-user/:userId", authMiddleware, blockUser);
 
-
 router.get("/dashboard-stats", authMiddleware, getDashboardStats);
 router.get("/Dashboard-Stat-List/requests", authMiddleware, getDashboardRequestList);
 
