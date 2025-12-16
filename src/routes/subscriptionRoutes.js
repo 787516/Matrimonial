@@ -7,7 +7,7 @@ const router = express.Router();
 
 router.post("/create-payment-link", authMiddleware, createPaymentLink);
 router.get("/me", authMiddleware, getMySubscription);
-router.get("/plans", authMiddleware, getPlans )
+router.get("/plans", getPlans )
 // Webhook (NO auth middleware)
 //router.post("/webhook", razorpayWebhook);
 

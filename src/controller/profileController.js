@@ -6,6 +6,25 @@ import mongoose from "mongoose";
 import cloudinary from "../config/cloudinary.js";
 import fs from "fs";
 
+
+function normalizeProfile(obj) {
+  const cap = (v) =>
+    typeof v === "string" && v.trim()
+      ? v.trim()[0].toUpperCase() + v.trim().slice(1).toLowerCase()
+      : v;
+
+  obj.city = cap(obj.city);
+  obj.state = cap(obj.state);
+  obj.area = cap(obj.area);
+  obj.religion = cap(obj.religion);
+  obj.community = cap(obj.community);
+  obj.subCommunity = cap(obj.subCommunity);
+  obj.motherTongue = cap(obj.motherTongue);
+  obj.country = cap(obj.country);
+}
+
+
+
 // ✅ Fetch complete user profile (joins User + Profile)
 // ✅ Fetch complete user profile (User + Profile + Profile Photo)
 export const getUserProfile = async (req, res) => {
@@ -64,13 +83,16 @@ export const getUserProfile = async (req, res) => {
 
 // ✅ Create or Update Profile
 export const updateUserProfile = async (req, res) => {
-  console.log("🔄 Update Profile Request Body:", req.body);
+  //console.log("🔄 Update Profile Request Body:", req.body);
   try {
     const userId = req.user._id;
     const updates = req.body;
+  normalizeProfile(updates);
+     // Normalize text fields
+   
 
     let profile = await UserProfileDetail.findOne({ userId });
-
+      normalizeProfile(profile);
     if (!profile) {
       profile = new UserProfileDetail({ userId, ...updates });
     } else {
