@@ -11,7 +11,6 @@ export const createPaymentLink = async (req, res) => {
     if (!plan) {
       return res.status(404).json({ message: "Plan not found" });
     }
-
     // Create Razorpay payment link
     const paymentLink = await razorpayInstance.paymentLink.create({
       amount: plan.price * 100,
@@ -27,12 +26,41 @@ export const createPaymentLink = async (req, res) => {
     });
 
     // ALWAYS create a new subscription record
-    const subscription = await UserSubscription.create({
-      userId,
-      planId,
-      paymentLinkId: paymentLink.id,
-      status: "Pending",
-    });
+    // const subscription = await UserSubscription.create({
+    //   userId,
+    //   planId,
+    //   paymentLinkId: paymentLink.id,
+    //   status: "Pending",
+    // });
+
+//     await UserSubscription.findOneAndUpdate(
+//   { userId },
+//   {
+//     userId,
+//     planId,
+//     paymentLinkId: paymentLink.id,
+//     status: "Pending",
+//   },
+//   { upsert: true, new: true }
+// );
+const subscription = await UserSubscription.findOneAndUpdate(
+  {
+    userId,
+    status: { $in: ["Pending", "Active"] }, // important
+  },
+  {
+    userId,
+    planId,
+    paymentLinkId: paymentLink.id,
+    status: "Pending",
+  },
+  {
+    upsert: true,
+    new: true,
+  }
+);
+
+
 
     return res.json({
       success: true,
@@ -47,18 +75,29 @@ export const createPaymentLink = async (req, res) => {
 };
 
 
+// export const getMySubscription = async (req, res) => {
+//   try {
+//     const subscription = await UserSubscription.findOne({ userId: req.user._id })
+//       .populate("planId");
+//     res.json({ subscription });
+//   } catch (error) {
+//     res.status(500).json({ message: "Something went wrong" });
+//   }
+// };
+
+
 export const getMySubscription = async (req, res) => {
   try {
-    const subscription = await UserSubscription.findOne({ userId: req.user._id })
-      .populate("planId");
+    const subscription = await UserSubscription.findOne({
+      userId: req.user._id,
+      status: "Active",
+    }).populate("planId");
 
     res.json({ subscription });
   } catch (error) {
-    res.status(500).json({ message: "Something went wrong" });
+    res.status(500).json({ message: error.message });
   }
 };
-
-
 
 // GET all plans
 export const getPlans = async (req, res) => {

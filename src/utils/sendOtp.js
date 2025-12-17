@@ -39,7 +39,7 @@ async function sendOtpEmail(email, otp = null, purpose = "registration") {
         `;
         showOtpBlock = false; // ❌ No OTP here
         break;
-
+        
       default:
         subject = "Your OTP Verification Code - Matrimony App 💍";
         introMessage = "Thank you for registering. Use the OTP below to verify your email.";
@@ -71,12 +71,10 @@ async function sendOtpEmail(email, otp = null, purpose = "registration") {
               </div>`
                 : ""
             }
-
             <p>If this action wasn't done by you, please change your password immediately.</p>
 
             <p style="margin-top:25px">Regards,<br/><b style="color:#d92332">Matrimony Team</b></p>
           </div>
-
           <div style="background:#eee;padding:12px;text-align:center;font-size:12px;color:#777">
             © ${new Date().getFullYear()} Matrimony App
           </div>

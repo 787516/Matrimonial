@@ -652,7 +652,7 @@ export const viewProfile = async (req, res) => {
       "ProfileViewed",
       `${viewerName} viewed your profile`
     );
-
+    
     return res.json({
       message: "Profile viewed successfully",
       profile,

@@ -13,12 +13,12 @@ import subscriptionRoutes from "./src/routes/subscriptionRoutes.js";
 import notificationRoutes from "./src/routes/notificationRoutes.js"; // ✅ Import notification routes
 import { initializeSocket } from "./src/utils/socketServer.js";
 import {razorpayWebhook } from "./src/controller/razorpayWebhookController.js";
+import helpRoutes from "./src/routes/helpRoutes.js";
 import caste from "./src/controller/caste.js";
 import casteSearch from "./src/controller/casteSearch.js";
 
 import http from "http";
 import cors from "cors";
-
 
 app.use(
   cors({
@@ -58,6 +58,7 @@ app.use("/api/notifications", notificationRoutes); // ✅ Register notification 
 
 app.use("/api/castes", caste);
 app.use("/api/castes", casteSearch);
+app.use("/api/help", helpRoutes);
 
 app.get('/', (req, res) => {
     res.send('Welcome to Matrimonial Backend!');

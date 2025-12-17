@@ -29,4 +29,10 @@ const userSubscriptionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+
+userSubscriptionSchema.index(
+  { userId: 1 },
+  { unique: true }
+);
+
 export default mongoose.model("UserSubscription", userSubscriptionSchema);

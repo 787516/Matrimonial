@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import UserSubscription from "../models/userSubscriptionModel.js";
 import SubscriptionPlan from "../models/subscriptionPlanModel.js";
+import sendSubscriptionEmail from "../utils/sendSubscriptionEmail.js";
 
 export const razorpayWebhook = async (req, res) => {
   try {
@@ -28,7 +29,9 @@ export const razorpayWebhook = async (req, res) => {
       const paymentLinkId = event.payload.payment_link.entity.id;
       const paymentId = event.payload.payment.entity.id;
 
-      const sub = await UserSubscription.findOne({ paymentLinkId }).populate("planId");
+      const sub = await UserSubscription.findOne({ paymentLinkId })
+        .populate("planId")
+        .populate("userId");
 
       if (!sub) {
         console.log("❌ No subscription found for", paymentLinkId);
@@ -50,12 +53,20 @@ export const razorpayWebhook = async (req, res) => {
         },
         { new: true }
       );
-
+      // 📧 SEND SUBSCRIPTION EMAIL 
+      await sendSubscriptionEmail({
+        email: sub.userId.email,
+        name: sub.userId.firstName || "User",
+        planName: sub.planId.name,
+        amount: sub.planId.price,
+        startDate: startDate.toDateString(),
+        endDate: endDate.toDateString(),
+        paymentId,
+      });
+      console.log("✅ Subscription activated & email sent");
       console.log("✅ Subscription activated:", updated);
     }
-
     return res.json({ status: "ok" });
-
   } catch (err) {
     console.log("Webhook error:", err);
     return res.status(500).json({ error: err.message });
