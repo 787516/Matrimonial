@@ -33,9 +33,13 @@ export const getUserProfile = async (req, res) => {
 
     const profile = await UserProfileDetail.findOne({ userId })
       .populate("userId", 
-        "firstName middleName lastName email phone gender dateOfBirth maritalStatus"
+        "firstName middleName lastName email phone gender dateOfBirth maritalStatus registrationId"
       )
       .lean(); // important to modify the object
+          // 3️⃣ 🔥 Fetch Partner Preference
+    const partnerPreference = await UserPartnerPreference.findOne({
+      userProfileId: profile._id,
+    }).lean();
 
     if (!profile) {
       return res.status(404).json({ message: "Profile not found" });
@@ -68,6 +72,7 @@ export const getUserProfile = async (req, res) => {
       success: true,
       message: "Profile fetched successfully",
       profile,
+      partnerPreference: partnerPreference || null,
     });
 
   } catch (error) {
@@ -87,12 +92,12 @@ export const updateUserProfile = async (req, res) => {
   try {
     const userId = req.user._id;
     const updates = req.body;
-  normalizeProfile(updates);
+  // normalizeProfile(updates);
      // Normalize text fields
    
 
     let profile = await UserProfileDetail.findOne({ userId });
-      normalizeProfile(profile);
+      // normalizeProfile(profile);
     if (!profile) {
       profile = new UserProfileDetail({ userId, ...updates });
     } else {
@@ -123,9 +128,9 @@ function calculateProfileCompletion(profile) {
     profile.dateOfBirth,
     profile.maritalStatus,
     profile.height,
-    profile.weight,
-    profile.complexion,
-    profile.bodyType,
+    // profile.weight,
+    // profile.complexion,
+    // profile.bodyType,
     profile.diet,
     profile.smoking,
     profile.drinking,
