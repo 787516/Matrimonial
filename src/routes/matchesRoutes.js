@@ -12,7 +12,8 @@ import {
   handleRequestAction,
   blockUser,
   getDashboardStats,
-  getDashboardRequestList
+  getDashboardRequestList,
+  unblockUser,
 } from "../controller/matchesController.js";
 
 const router = express.Router();
@@ -29,7 +30,9 @@ router.get("/requests/pending", authMiddleware, getPendingRequests);
 // Accept / Reject / Block
 router.patch("/requests/:requestId", authMiddleware, handleRequestAction);
 //only block
-router.patch("/matches/block-user/:userId", authMiddleware, blockUser);
+router.patch("/block-user/:userId", authMiddleware, blockUser);
+//only unblock
+router.patch("/unblock-user/:userId", authMiddleware, unblockUser);
 
 router.get("/dashboard-stats", authMiddleware, getDashboardStats);
 router.get("/Dashboard-Stat-List/requests", authMiddleware, getDashboardRequestList);

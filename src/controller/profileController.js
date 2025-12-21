@@ -120,51 +120,128 @@ export const updateUserProfile = async (req, res) => {
 };
 
 // ✅ Calculate profile completion %
-function calculateProfileCompletion(profile) {
-  const fields = [
-    profile.profileFor,
-    profile.profileCreatedBy,
-    profile.gender,
-    profile.dateOfBirth,
-    profile.maritalStatus,
-    profile.height,
-    // profile.weight,
-    // profile.complexion,
-    // profile.bodyType,
-    profile.diet,
-    profile.smoking,
-    profile.drinking,
-    profile.middleName,
-    profile.fatherOccupation,
-    profile.motherName,
-    profile.motherOccupation,
-    profile.familyType,
-    profile.religion,
-    profile.community,
-    profile.subCommunity,
-    profile.motherTongue,
-    profile.highestQualification,
-    profile.course,
-    profile.workingWith,
-    profile.designation,
-    profile.companyName,
-    profile.annualIncome,
-    profile.country,
-    profile.state,
-    profile.city,
-    profile.area,
-    profile.pincode,
-    profile.residencyStatus,
-    profile.shortIntro,
-    profile.aboutMe,
-    profile.partnerExpectation,
+// Robust profile completion calculator
+export function calculateProfileCompletion(profile = {}, user = {}) {
+  // fields that *count* toward completion (required fields)
+  const requiredFields = [
+    "profileFor",
+    "profileCreatedBy",
+    "gender",
+    "dateOfBirth",
+    "maritalStatus",
+    "height",
+    "diet",
+    "smoking",
+    "drinking",
+    "middleName", // lives on User (profile.userId) typically
+    "fatherOccupation",
+    "motherName",
+    "motherOccupation",
+    "familyType",
+    "religion",
+    "community",
+    "subCommunity",
+    "motherTongue",
+    "highestQualification",
+    "course",
+    "workingWith",
+    "designation",
+    "companyName",
+    "annualIncome",
+    "country",
+    "state",
+    "city",
+    "area",
+    "pincode",
+    "residencyStatus",
+    "aboutMe",
   ];
 
-  const filled = fields.filter((v) => v !== null && v !== undefined && v !== "").length;
+  // helper: robust "is filled" test
+  function isFilled(val) {
+    if (val === undefined || val === null) return false;
 
-  return Math.round((filled / fields.length) * 100);
+    // If boolean, consider it filled (presence matters). If you want to require true specifically, change this.
+    if (typeof val === "boolean") return true;
+
+    // Numbers (including 0) count as filled if not NaN
+    if (typeof val === "number") return !Number.isNaN(val);
+
+    // Strings: trim, reject empty and common placeholders
+    if (typeof val === "string") {
+      const s = val.trim();
+      if (s === "") return false;
+      const normal = s.toLowerCase();
+      const falsyValues = ["no", "none", "n/a", "dont know", "don't know", "--"];
+      if (falsyValues.includes(normal)) return false;
+      // numeric strings like "0" / "123" are valid
+      return true;
+    }
+
+    // Arrays: at least one item must be filled (recursively)
+    if (Array.isArray(val)) {
+      return val.some((item) => isFilled(item));
+    }
+
+    // Dates
+    if (val instanceof Date) return !isNaN(val.getTime());
+    // date strings
+    if (typeof val === "object" && val?.toString && val.toString().startsWith("ISODate")) {
+      try { return !!new Date(val).getTime(); } catch (e) { return false; }
+    }
+    if (typeof val === "string" && !isNaN(Date.parse(val))) return true;
+
+    // Objects: consider filled if at least one key is filled
+    if (typeof val === "object") {
+      return Object.keys(val).some((k) => isFilled(val[k]));
+    }
+
+    return false;
+  }
+
+  // helper: read a field from profile or from nested user/profile.userId or fallback user param
+  function readField(key) {
+    // middleName lives on user
+    if (key === "middleName") {
+      return (
+        // profile might be populated: profile.userId.middleName
+        (profile && profile.userId && profile.userId.middleName) ||
+        // profile doc might include middleName rarely
+        profile.middleName ||
+        // fall back to explicit user param
+        (user && user.middleName) ||
+        null
+      );
+    }
+
+    // Prefer value on profile object
+    if (profile && Object.prototype.hasOwnProperty.call(profile, key)) {
+      return profile[key];
+    }
+
+    // Try nested populated userId (some fields may be on user)
+    if (profile && profile.userId && Object.prototype.hasOwnProperty.call(profile.userId, key)) {
+      return profile.userId[key];
+    }
+
+    // fallback to user param
+    if (user && Object.prototype.hasOwnProperty.call(user, key)) {
+      return user[key];
+    }
+
+    return undefined;
+  }
+
+  if (!requiredFields.length) return 100;
+
+  const filledCount = requiredFields.reduce((acc, key) => {
+    const val = readField(key);
+    if (isFilled(val)) return acc + 1;
+    return acc;
+  }, 0);
+
+  return Math.round((filledCount / requiredFields.length) * 100);
 }
-
 
 
 // ✅ Create / Update and get Partner Preference

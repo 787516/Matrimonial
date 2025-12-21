@@ -157,7 +157,11 @@ export const getChatList = async (req, res) => {
 
     const rooms = await ChatRoom.find({
       participants: userId,
-    }).populate("participants", "firstName lastName email gender");
+    }).populate(
+  "participants",
+  "firstName lastName email gender registrationId city"
+);
+
 
     const chatList = await Promise.all(
       rooms.map(async (room) => {
@@ -191,6 +195,9 @@ export const getChatList = async (req, res) => {
               email: p.email,
               gender: p.gender,
               profilePhoto: photo, // 👉 ADDED HERE
+              registrationId: p.registrationId || "—", // ✅ ADDED
+              city: p.city || "—",  
+              
             };
           })
         );

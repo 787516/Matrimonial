@@ -281,9 +281,9 @@ export const createActivity = async (
       }).lean();
 
       if (existing) {
-        console.log(
-          `⚠ Skipping duplicate activity ${activityType} for user ${userId}`
-        );
+        // console.log(
+        //   `⚠ Skipping duplicate activity ${activityType} for user ${userId}`
+        // );
         return existing;
       }
     }

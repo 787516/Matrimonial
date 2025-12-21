@@ -4,7 +4,7 @@ import User from "../models/userModel.js";
 import { createActivity } from "./notificationController.js";
 import UserPartnerPreference from "../models/userPartnerPreferenceModel.js";
 import UserPhotoGallery from "../models/userPhotoGalleryModel.js";
-
+import ChatRoom from "../models/chatRoomModel.js";
 // 🔹 Helper: safe string compare (already used below but let's make sure it's defined once)
 const equalsCI = (a, b) =>
   a?.trim()?.toLowerCase() === b?.trim()?.toLowerCase();
@@ -855,6 +855,73 @@ export const blockUser = async (req, res) => {
   }
 };
 
+//unblock user
+
+export const unblockUser = async (req, res) => {
+  try {
+    const userId = req.user._id; // the user performing the unblock
+    const otherUserId = req.params.userId;
+
+    if (!otherUserId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    // find the Block record (either direction)
+    const request = await MatchRequest.findOne({
+      type: "Interest",
+      status: "Blocked",
+      $or: [
+        { senderId: userId, receiverId: otherUserId },
+        { senderId: otherUserId, receiverId: userId },
+      ],
+    });
+
+    if (!request) {
+      return res.status(404).json({ message: "No blocked relationship found" });
+    }
+
+    // ensure the caller is a participant (extra safety)
+    const isParticipant =
+      String(request.senderId) === String(userId) ||
+      String(request.receiverId) === String(userId);
+
+    if (!isParticipant) {
+      return res.status(403).json({ message: "Not authorized to unblock this user" });
+    }
+
+    // Option A (recommended): mark the block as cancelled to keep history
+    request.status = "Cancelled";
+    await request.save();
+
+    // Option B (alternative): remove the block record entirely
+    // await MatchRequest.deleteOne({ _id: request._id });
+
+    // optional: notify the other user
+    const unblockerName = `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim();
+    const otherIdToNotify = String(userId) === String(request.senderId)
+      ? request.receiverId
+      : request.senderId;
+
+    await createActivity(
+      otherIdToNotify,
+      userId,
+      "UserUnblocked",
+      `${unblockerName} unblocked you`,
+      request._id,
+      { requestType: "Interest" }
+    );
+
+    return res.json({
+      message: "User unblocked successfully",
+      request, // or return some sanitized object if necessary
+    });
+  } catch (err) {
+    console.error("Unblock User Error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+
 export const getPendingRequests = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -874,156 +941,199 @@ export const getPendingRequests = async (req, res) => {
   }
 };
 
+
+const buildDashboardList = async ({ userId, type, status, onlyChat }) => {
+  // ⛔ This function returns ONLY CLEAN, RENDERABLE USERS
+
+  let includeStatuses = ["Pending", "Accepted"];
+
+    // ✅ Allow blocked explicitly
+  if (status === "Blocked") {
+    includeStatuses = ["Blocked"];
+  } else if (status && status !== "active") {
+    includeStatuses = status.split(",").map(s => s.trim());
+  }
+
+  if (status && status !== "active") {
+    includeStatuses = status.split(",").map(s => s.trim());
+  }
+
+  let filter = {};
+
+  if (type === "interaction") {
+    filter = {
+      $or: [{ senderId: userId }, { receiverId: userId }],
+      status: { $in: includeStatuses },
+    };
+  } else {
+    filter.status = status;
+    if (onlyChat) filter.type = "Chat";
+
+    if (type === "received") filter.receiverId = userId;
+    if (type === "sent") filter.senderId = userId;
+  }
+
+  const requests = await MatchRequest.find(filter).lean();
+
+  const otherIds = new Set();
+  const safeRequests = [];
+
+  for (const r of requests) {
+    const sender = String(r.senderId);
+    const receiver = String(r.receiverId);
+
+    const other =
+      type === "interaction"
+        ? sender === String(userId) ? receiver : sender
+        : type === "received"
+        ? sender
+        : receiver;
+
+    if (!other || other === "undefined") continue;
+
+    otherIds.add(other);
+    safeRequests.push({ ...r, otherId: other });
+  }
+
+  const users = await User.find({ _id: { $in: [...otherIds] } })
+    .select("firstName lastName email gender registrationId")
+    .lean();
+
+  const userMap = {};
+  users.forEach(u => (userMap[String(u._id)] = u));
+
+  const profiles = await UserProfileDetail.find({
+    userId: { $in: [...otherIds] },
+  }).lean();
+
+  const profileMap = {};
+  profiles.forEach(p => (profileMap[String(p.userId)] = p));
+
+  const photos = await UserPhotoGallery.find({
+    userProfileId: { $in: [...otherIds] },
+    isProfilePhoto: true,
+  }).lean();
+
+  const photoMap = {};
+  photos.forEach(p => (photoMap[String(p.userProfileId)] = p.imageUrl));
+
+  return safeRequests
+    .map(r => {
+      const u = userMap[r.otherId];
+      if (!u) return null;
+
+      const profile = profileMap[r.otherId] || {};
+
+      return {
+        _id: u._id,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        registrationId: u.registrationId,
+        gender: u.gender,
+        profilePhoto: photoMap[r.otherId] || null,
+        maritalStatus: profile.maritalStatus || "",
+        city: profile.city || "",
+        state: profile.state || "",
+        status: r.status,
+        requestId: r._id,
+      };
+    })
+    .filter(Boolean);
+};
+
 export const getDashboardStats = async (req, res) => {
-  // console.log(" Fetching Dashboard Stats ");
   try {
     const userId = req.user._id;
 
-    // ------------------------------
-    // RECEIVED REQUESTS (others → you)
-    // ------------------------------
-    const receivedPending = await MatchRequest.countDocuments({
-      receiverId: userId,
+    const sentPending = await buildDashboardList({
+      userId,
+      type: "sent",
       status: "Pending",
     });
 
-    const receivedAccepted = await MatchRequest.countDocuments({
-      receiverId: userId,
+    const sentAccepted = await buildDashboardList({
+      userId,
+      type: "sent",
       status: "Accepted",
     });
 
-    const receivedRejected = await MatchRequest.countDocuments({
-      receiverId: userId,
-      status: "Rejected",
-    });
-
-    // ------------------------------
-    // SENT REQUESTS (you → others)
-    // ------------------------------
-    const sentPending = await MatchRequest.countDocuments({
-      senderId: userId,
+    const receivedPending = await buildDashboardList({
+      userId,
+      type: "received",
       status: "Pending",
     });
 
-    const sentAccepted = await MatchRequest.countDocuments({
-      senderId: userId,
+    const receivedAccepted = await buildDashboardList({
+      userId,
+      type: "received",
       status: "Accepted",
     });
 
-    const sentRejected = await MatchRequest.countDocuments({
-      senderId: userId,
-      status: "Rejected",
+    const interactions = await buildDashboardList({
+      userId,
+      type: "interaction",
+      status: "active",
     });
+
+    const totalChats = await ChatRoom.countDocuments({
+  participants: userId,
+});
+const blockedByMe = await buildDashboardList({
+  userId,
+  type: "sent",
+  status: "Blocked",
+});
+
+
 
     res.json({
-      message: "Dashboard stats fetched",
-
       received: {
-        accepted: receivedAccepted,
-        pending: receivedPending,
-        rejected: receivedRejected,
+        pending: receivedPending.length,
+        accepted: receivedAccepted.length,
       },
-
       sent: {
-        acceptedByOthers: sentAccepted,
-        pending: sentPending,
-        declinedByOthers: sentRejected,
+        pending: sentPending.length,
+        acceptedByOthers: sentAccepted.length,
       },
+      interactions: {
+        total: interactions.length,
+      },
+       chats: {
+    totalChats, // ✅ FIXED
+  },
+  blocked: {
+    total: blockedByMe.length, // ✅ NEW
+  },
     });
-
-    // console.log(" Dashboard stats sent ", res.data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
+
 
 export const getDashboardRequestList = async (req, res) => {
   try {
-    if (!req.user || !req.user._id) {
-      return res
-        .status(401)
-        .json({ error: "Unauthorized - Missing user token" });
-    }
     const userId = req.user._id;
+    const { type, status, onlyChat } = req.query;
 
-    let { type, status } = req.query;
-
-    if (!type || !status) {
-      return res.status(400).json({ message: "type and status are required" });
-    }
-
-    let filter = { status };
-
-    // 👇 NEW: only chat requests
-    if (req.query.onlyChat === "true") {
-      filter.type = "Chat";
-    }
-
-    // RECEIVED REQUESTS (others → you)
-    if (type === "received") {
-      filter.receiverId = userId;
-    }
-
-    // SENT REQUESTS (you → others)
-    else if (type === "sent") {
-      filter.senderId = userId;
-    } else {
-      return res.status(400).json({ message: "Invalid type" });
-    }
-
-    // Find requests with user details
-    const requests = await MatchRequest.find(filter)
-      .populate("senderId", "firstName lastName email gender registrationId")
-      .populate("receiverId", "firstName lastName email gender registrationId");
-
-    // Format final user list
-    const formatted = [];
-
-    for (const reqItem of requests) {
-      const otherUser =
-        type === "received" ? reqItem.senderId : reqItem.receiverId;
-
-      // 🚨 Skip invalid requests
-      if (!otherUser || !otherUser._id) {
-        console.warn("Invalid MatchRequest detected:", reqItem);
-        continue;
-      }
-
-      const profileDetails = await UserProfileDetail.findOne({
-        userId: otherUser._id,
-      }).lean();
-
-      const photo = await UserPhotoGallery.findOne({
-        userProfileId: otherUser._id,
-        isProfilePhoto: true,
-      });
-
-      formatted.push({
-        _id: otherUser._id,
-        firstName: otherUser.firstName,
-        lastName: otherUser.lastName,
-        email: otherUser.email,
-        registrationId: otherUser.registrationId,
-        gender: otherUser.gender,
-        profilePhoto: photo ? photo.imageUrl : null,
-
-        maritalStatus: profileDetails?.maritalStatus || "",
-        city: profileDetails?.city || "",
-        state: profileDetails?.state || "",
-        motherTongue: profileDetails?.motherTongue || "",
-        age: profileDetails?.age || "",
-
-        status: reqItem.status,
-        requestId: reqItem._id,
-      });
-    }
+    const users = await buildDashboardList({
+      userId,
+      type,
+      status,
+      onlyChat: onlyChat === "true",
+    });
 
     res.json({
       message: "List fetched",
-      total: formatted.length,
-      users: formatted,
+      total: users.length,
+      users,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
+
+
+
+
+
