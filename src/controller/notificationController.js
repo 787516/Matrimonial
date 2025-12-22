@@ -28,7 +28,7 @@ export const getNotifications = async (req, res) => {
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
     const skip = (pageNum - 1) * limitNum;
-
+    
     // Build filter
     const filter = { userId };
     if (unreadOnly === "true") {
@@ -269,6 +269,7 @@ export const createActivity = async (
       "ChatRequestReceived",
       "ChatRequestAccepted",
       "ProfileViewed", // optional: remove if you want every view
+      "UserUnblocked",
     ]);
 
     if (dedupeTypes.has(activityType)) {

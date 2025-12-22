@@ -7,21 +7,21 @@ import cloudinary from "../config/cloudinary.js";
 import fs from "fs";
 
 
-function normalizeProfile(obj) {
-  const cap = (v) =>
-    typeof v === "string" && v.trim()
-      ? v.trim()[0].toUpperCase() + v.trim().slice(1).toLowerCase()
-      : v;
+// function normalizeProfile(obj) {
+//   const cap = (v) =>
+//     typeof v === "string" && v.trim()
+//       ? v.trim()[0].toUpperCase() + v.trim().slice(1).toLowerCase()
+//       : v;
 
-  obj.city = cap(obj.city);
-  obj.state = cap(obj.state);
-  obj.area = cap(obj.area);
-  obj.religion = cap(obj.religion);
-  obj.community = cap(obj.community);
-  obj.subCommunity = cap(obj.subCommunity);
-  obj.motherTongue = cap(obj.motherTongue);
-  obj.country = cap(obj.country);
-}
+//   obj.city = cap(obj.city);
+//   obj.state = cap(obj.state);
+//   obj.area = cap(obj.area);
+//   obj.religion = cap(obj.religion);
+//   obj.community = cap(obj.community);
+//   obj.subCommunity = cap(obj.subCommunity);
+//   obj.motherTongue = cap(obj.motherTongue);
+//   obj.country = cap(obj.country);
+// }
 
 
 
@@ -87,25 +87,32 @@ export const getUserProfile = async (req, res) => {
 
 
 // ✅ Create or Update Profile
+
 export const updateUserProfile = async (req, res) => {
-  //console.log("🔄 Update Profile Request Body:", req.body);
   try {
     const userId = req.user._id;
-    const updates = req.body;
-  // normalizeProfile(updates);
-     // Normalize text fields
-   
 
+    // 🔥 Prevent frontend from overriding calculated value
+    const updates = { ...req.body };
+    delete updates.profileCompleted;
+
+    // 🔍 Find existing profile
     let profile = await UserProfileDetail.findOne({ userId });
-      // normalizeProfile(profile);
+
+    // 🆕 Create or update profile
     if (!profile) {
-      profile = new UserProfileDetail({ userId, ...updates });
+      profile = new UserProfileDetail({
+        userId,
+        ...updates,
+      });
     } else {
       Object.assign(profile, updates);
     }
 
-    // Calculate profile completion %
+    // 🧮 Calculate profile completion AFTER updates
     profile.profileCompleted = calculateProfileCompletion(profile);
+
+    // 💾 Save
     await profile.save();
 
     res.status(200).json({
@@ -113,136 +120,145 @@ export const updateUserProfile = async (req, res) => {
       profileCompleted: profile.profileCompleted,
       profile,
     });
+    console.log("✅ Final profileCompleted:", profile.profileCompleted);
+
   } catch (error) {
     console.error("❌ Error updating profile:", error);
     res.status(500).json({ error: "Failed to update profile" });
   }
 };
 
+
 // ✅ Calculate profile completion %
-// Robust profile completion calculator
-export function calculateProfileCompletion(profile = {}, user = {}) {
-  // fields that *count* toward completion (required fields)
-  const requiredFields = [
-    "profileFor",
-    "profileCreatedBy",
-    "gender",
-    "dateOfBirth",
-    "maritalStatus",
-    "height",
-    "diet",
-    "smoking",
-    "drinking",
-    "middleName", // lives on User (profile.userId) typically
-    "fatherOccupation",
-    "motherName",
-    "motherOccupation",
-    "familyType",
-    "religion",
-    "community",
-    "subCommunity",
-    "motherTongue",
-    "highestQualification",
-    "course",
-    "workingWith",
-    "designation",
-    "companyName",
-    "annualIncome",
-    "country",
-    "state",
-    "city",
-    "area",
-    "pincode",
-    "residencyStatus",
-    "aboutMe",
-  ];
+export const FRONTEND_PROFILE_FIELDS = [
+  "profileFor",
+  "profileCreatedBy",
+  "gender",
+  "dateOfBirth",
+  "maritalStatus",
+  "height",
+  "diet",
+  "smoking",
+  "drinking",
+  "familyType",
+  "religion",
+  "community",
+  "subCommunity",
+  "motherTongue",
+  "highestQualification",
+  "course",
+  "workingWith",
+  "designation",
+  "companyName",
+  "annualIncome",
+  "country",
+  "state",
+  "city",
+  "area",
+  "pincode",
+  "residencyStatus",
+  "profilePhoto",
+];
 
-  // helper: robust "is filled" test
-  function isFilled(val) {
+export function calculateProfileCompletion(
+  profile = {},
+  user = {},
+  fieldsList = FRONTEND_PROFILE_FIELDS
+) {
+  // console.log("🔥 calculateProfileCompletion CALLED");
+  // console.log("📦 Profile received:", JSON.stringify(profile, null, 2));
+
+  if (!fieldsList.length) return 100;
+
+  const isFilled = (val) => {
     if (val === undefined || val === null) return false;
-
-    // If boolean, consider it filled (presence matters). If you want to require true specifically, change this.
     if (typeof val === "boolean") return true;
-
-    // Numbers (including 0) count as filled if not NaN
     if (typeof val === "number") return !Number.isNaN(val);
-
-    // Strings: trim, reject empty and common placeholders
-    if (typeof val === "string") {
-      const s = val.trim();
-      if (s === "") return false;
-      const normal = s.toLowerCase();
-      const falsyValues = ["no", "none", "n/a", "dont know", "don't know", "--"];
-      if (falsyValues.includes(normal)) return false;
-      // numeric strings like "0" / "123" are valid
-      return true;
-    }
-
-    // Arrays: at least one item must be filled (recursively)
-    if (Array.isArray(val)) {
-      return val.some((item) => isFilled(item));
-    }
-
-    // Dates
+    if (typeof val === "string") return val.trim() !== "";
+    if (Array.isArray(val)) return val.length > 0;
     if (val instanceof Date) return !isNaN(val.getTime());
-    // date strings
-    if (typeof val === "object" && val?.toString && val.toString().startsWith("ISODate")) {
-      try { return !!new Date(val).getTime(); } catch (e) { return false; }
-    }
-    if (typeof val === "string" && !isNaN(Date.parse(val))) return true;
-
-    // Objects: consider filled if at least one key is filled
-    if (typeof val === "object") {
-      return Object.keys(val).some((k) => isFilled(val[k]));
-    }
-
+    if (typeof val === "object") return Object.values(val).some(isFilled);
     return false;
-  }
+  };
 
-  // helper: read a field from profile or from nested user/profile.userId or fallback user param
-  function readField(key) {
-    // middleName lives on user
-    if (key === "middleName") {
-      return (
-        // profile might be populated: profile.userId.middleName
-        (profile && profile.userId && profile.userId.middleName) ||
-        // profile doc might include middleName rarely
-        profile.middleName ||
-        // fall back to explicit user param
-        (user && user.middleName) ||
-        null
-      );
-    }
-
-    // Prefer value on profile object
-    if (profile && Object.prototype.hasOwnProperty.call(profile, key)) {
-      return profile[key];
-    }
-
-    // Try nested populated userId (some fields may be on user)
-    if (profile && profile.userId && Object.prototype.hasOwnProperty.call(profile.userId, key)) {
-      return profile.userId[key];
-    }
-
-    // fallback to user param
-    if (user && Object.prototype.hasOwnProperty.call(user, key)) {
-      return user[key];
-    }
-
+  const readField = (key) => {
+    if (profile?.[key] !== undefined) return profile[key];
+    if (profile?.userId?.[key] !== undefined) return profile.userId[key];
+    if (user?.[key] !== undefined) return user[key];
     return undefined;
+  };
+
+  let filled = 0;
+  for (const key of fieldsList) {
+    if (isFilled(readField(key))) filled++;
   }
 
-  if (!requiredFields.length) return 100;
-
-  const filledCount = requiredFields.reduce((acc, key) => {
-    const val = readField(key);
-    if (isFilled(val)) return acc + 1;
-    return acc;
-  }, 0);
-
-  return Math.round((filledCount / requiredFields.length) * 100);
+  return Math.round((filled / fieldsList.length) * 100);
 }
 
+// Calculate profile completion % (only frontend-enforced registration fields)
+// export function calculateProfileCompletion(profile = {}, user = {}) {
+//   // Only count fields that the frontend enforces as required during registration
+//   const requiredFields = [
+//     "firstName",
+//     "lastName",
+//     "email",
+//     "phone",
+//     "profileFor",
+//     "maritalStatus",
+//     "gender",
+//     "dateOfBirth",
+//     "country",
+//     "state",
+//     "district",
+//     "city",
+//     "area",
+//     "pincode",
+//   ];
+
+//   function isFilled(val) {
+//     if (val === undefined || val === null) return false;
+//     if (typeof val === "boolean") return true;
+//     if (typeof val === "number") return !Number.isNaN(val);
+//     if (typeof val === "string") {
+//       const s = val.trim();
+//       if (s === "") return false;
+//       const normal = s.toLowerCase();
+//       const falsyValues = ["no", "none", "n/a", "dont know", "don't know", "--"];
+//       if (falsyValues.includes(normal)) return false;
+//       return true;
+//     }
+//     if (Array.isArray(val)) return val.some((item) => isFilled(item));
+//     if (val instanceof Date) return !isNaN(val.getTime());
+//     if (typeof val === "object") {
+//       return Object.keys(val).some((k) => isFilled(val[k]));
+//     }
+//     return false;
+//   }
+
+//   // Read from profile first, then populated profile.userId, then explicit user param (req.user)
+//   function readField(key) {
+//     if (profile && Object.prototype.hasOwnProperty.call(profile, key)) {
+//       return profile[key];
+//     }
+//     if (profile && profile.userId && typeof profile.userId === "object" && Object.prototype.hasOwnProperty.call(profile.userId, key)) {
+//       return profile.userId[key];
+//     }
+//     if (user && Object.prototype.hasOwnProperty.call(user, key)) {
+//       return user[key];
+//     }
+//     return undefined;
+//   }
+
+//   if (!requiredFields.length) return 100;
+
+//   const filledCount = requiredFields.reduce((acc, key) => {
+//     const val = readField(key);
+//     return isFilled(val) ? acc + 1 : acc;
+//   }, 0);
+
+//   return Math.round((filledCount / requiredFields.length) * 100);
+// }
 
 // ✅ Create / Update and get Partner Preference
 export const upsertPartnerPreference = async (req, res) => {

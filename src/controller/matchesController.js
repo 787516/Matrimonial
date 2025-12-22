@@ -650,7 +650,7 @@ export const viewProfile = async (req, res) => {
       id,
       viewerId,
       "ProfileViewed",
-      `${viewerName} viewed your profile`
+      ` viewed your profile`
     );
     
     return res.json({
@@ -1034,6 +1034,12 @@ const buildDashboardList = async ({ userId, type, status, onlyChat }) => {
         maritalStatus: profile.maritalStatus || "",
         city: profile.city || "",
         state: profile.state || "",
+        actionStatus: r.status,         // Pending | Accepted | Rejected | Blocked
+  direction:
+    String(r.senderId) === String(userId)
+      ? "sent"
+      : "received",
+
         status: r.status,
         requestId: r._id,
       };
@@ -1069,6 +1075,19 @@ export const getDashboardStats = async (req, res) => {
       status: "Accepted",
     });
 
+    const receivedRejected = await buildDashboardList({
+  userId,
+  type: "received",
+  status: "Rejected",
+});
+
+const sentRejected = await buildDashboardList({
+  userId,
+  type: "sent",
+  status: "Rejected",
+});
+
+
     const interactions = await buildDashboardList({
       userId,
       type: "interaction",
@@ -1084,17 +1103,18 @@ const blockedByMe = await buildDashboardList({
   status: "Blocked",
 });
 
-
-
     res.json({
       received: {
         pending: receivedPending.length,
         accepted: receivedAccepted.length,
+        rejected: receivedRejected.length,
       },
       sent: {
         pending: sentPending.length,
         acceptedByOthers: sentAccepted.length,
+        declinedByOthers: sentRejected.length,
       },
+      
       interactions: {
         total: interactions.length,
       },
@@ -1122,11 +1142,15 @@ export const getDashboardRequestList = async (req, res) => {
       status,
       onlyChat: onlyChat === "true",
     });
+    const finalUsers =
+      type === "interaction"
+        ? users.map(u => ({ ...u, mode: "interaction" }))
+        : users;
 
     res.json({
       message: "List fetched",
-      total: users.length,
-      users,
+       total: finalUsers.length,
+      users: finalUsers,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
