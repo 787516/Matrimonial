@@ -18,13 +18,14 @@ mongoose
         durationInDays: 30,
         features: {
           canViewContacts: false,
-          maxProfileViews: 5,
+          maxProfileViews: 1,
           unlimitedProfileViews: false,
           chatAllowed: false,
           unlimitedInterest: false,
           supportLevel: "Basic",
         },
       },
+      
       {
         name: "SILVER",
         price: 2500,

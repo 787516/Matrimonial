@@ -588,80 +588,110 @@ export const sendChatRequest = async (req, res) => {
   }
 };
 
-//view profile
+// view profile controller
 export const viewProfile = async (req, res) => {
   try {
-    const { id } = req.params;
-    const viewerId = req.user._id;
+    const { id } = req.params;        // profile being viewed
+    const viewerId = req.user._id;    // logged-in user
 
-    const sub = req.subscription; // FREE or PAID subscription
+    const subscription = req.subscription; // injected via middleware
 
-    if (!sub || !sub.planId) {
+    /* -------------------------------------------------
+       🔒 BASIC SUBSCRIPTION VALIDATION
+    --------------------------------------------------*/
+
+    // ❌ No subscription
+    if (!subscription || !subscription.planId) {
       return res.status(403).json({
-        message:
-          "You do not have an active subscription. Please upgrade your membership.",
+        message: "Please upgrade your membership to view profiles.",
       });
     }
 
-    const features = sub.planId.features;
+    const plan = subscription.planId;
+    const { features } = plan;
 
-    // ⭐ Unlimited plan: skip all counting checks
-    const unlimited = features.unlimitedProfileViews === true;
-
-    // ⭐ Current view count
-    const viewer = await User.findById(viewerId);
-    const viewCount = viewer.profileViewCount || 0;
-
-    // ⭐ Check limit (ONLY if not unlimited)
-    if (!unlimited && viewCount >= features.maxProfileViews) {
-      return res.status(403).json({
-        message: `You have reached your limit of ${features.maxProfileViews} profile views. Please upgrade your membership.`,
-      });
-    }
-
-    // ❌ Check if either user blocked the other
+    /* -------------------------------------------------
+       ❌ BLOCK CHECK (safety)
+    --------------------------------------------------*/
     const isBlocked = await hasBlockedBetween(viewerId, id);
     if (isBlocked) {
-      return res
-        .status(403)
-        .json({ message: "You are not allowed to view this profile" });
+      return res.status(403).json({
+        message: "You are not allowed to view this profile.",
+      });
     }
 
-    // ⭐ Fetch viewed profile
+    /* -------------------------------------------------
+       ⭐ VIEW LIMIT LOGIC
+    --------------------------------------------------*/
+
+    // ⭐ PLATINUM (or unlimited plans) → skip all checks
+    if (!features.unlimitedProfileViews) {
+      // Fetch current count ONCE
+      const viewer = await User.findById(viewerId).select("profileViewCount");
+
+      const currentCount = viewer.profileViewCount || 0;
+      const maxAllowed = features.maxProfileViews;
+
+      // ❌ Limit reached (FREE / SILVER / GOLD)
+      if (currentCount >= maxAllowed) {
+        return res.status(403).json({
+          message:
+            plan.name === "FREE"
+              ? "You have already viewed one profile. Please upgrade your membership."
+              : `You have reached your limit of ${maxAllowed} profile views. Please upgrade your membership.`,
+        });
+      }
+
+      // ✅ Safe increment AFTER all checks pass
+      await User.updateOne(
+        { _id: viewerId },
+        { $inc: { profileViewCount: 1 } }
+      );
+    }
+
+    /* -------------------------------------------------
+       👤 FETCH PROFILE
+    --------------------------------------------------*/
     const profile = await UserProfileDetail.findOne({ userId: id }).populate(
       "userId",
       "firstName lastName gender email phone registrationId"
     );
 
     if (!profile) {
-      return res.status(404).json({ message: "Profile not found" });
-    }
-
-    // ⭐ Increase view count only AFTER all validation passes
-    if (!unlimited) {
-      await User.findByIdAndUpdate(viewerId, {
-        $inc: { profileViewCount: 1 },
+      return res.status(404).json({
+        message: "Profile not found",
       });
     }
 
-    // ⭐ Log activity
-    const viewerName = `${viewer.firstName} ${viewer.lastName}`;
+    /* -------------------------------------------------
+       🔔 ACTIVITY LOG (optional but clean)
+    --------------------------------------------------*/
+    const viewerUser = await User.findById(viewerId).select(
+      "firstName lastName"
+    );
+
     await createActivity(
       id,
       viewerId,
       "ProfileViewed",
-      ` viewed your profile`
+      `${viewerUser.firstName} ${viewerUser.lastName} viewed your profile`
     );
-    
-    return res.json({
+
+    /* -------------------------------------------------
+       ✅ SUCCESS
+    --------------------------------------------------*/
+    return res.status(200).json({
       message: "Profile viewed successfully",
       profile,
     });
-  } catch (err) {
-    console.log("View profile error:", err);
-    return res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error("View profile error:", error);
+    return res.status(500).json({
+      message: "Something went wrong while viewing profile.",
+    });
   }
 };
+
 
 // filter matches
 export const filterMatches = async (req, res) => {
@@ -947,16 +977,16 @@ const buildDashboardList = async ({ userId, type, status, onlyChat }) => {
 
   let includeStatuses = ["Pending", "Accepted"];
 
-    // ✅ Allow blocked explicitly
-  if (status === "Blocked") {
-    includeStatuses = ["Blocked"];
-  } else if (status && status !== "active") {
-    includeStatuses = status.split(",").map(s => s.trim());
-  }
+// ❌ duplicated & conflicting
+if (status === "Blocked") {
+  includeStatuses = ["Blocked"];
+} else if (status && status !== "active") {
+  includeStatuses = status.split(",").map(s => s.trim());
+}
 
-  if (status && status !== "active") {
-    includeStatuses = status.split(",").map(s => s.trim());
-  }
+if (status && status !== "active") {
+  includeStatuses = status.split(",").map(s => s.trim());
+}
 
   let filter = {};
 
@@ -966,7 +996,7 @@ const buildDashboardList = async ({ userId, type, status, onlyChat }) => {
       status: { $in: includeStatuses },
     };
   } else {
-    filter.status = status;
+    filter.status = { $in: includeStatuses };
     if (onlyChat) filter.type = "Chat";
 
     if (type === "received") filter.receiverId = userId;
