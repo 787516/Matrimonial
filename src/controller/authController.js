@@ -11,7 +11,6 @@ import jwt from "jsonwebtoken";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt.js";
 import sendOtpEmail from "../utils/sendOtp.js";
 
-
 // REGISTER USER → create pending entry and send OTP
 export const registerUser = async (req, res) => {
   try {
@@ -21,7 +20,7 @@ export const registerUser = async (req, res) => {
       middleName,
       email,
       phone,
-     // password,
+      // password,
       profileFor,
       gender,
       dateOfBirth,
@@ -36,12 +35,15 @@ export const registerUser = async (req, res) => {
 
     // Basic validations
     if (!email) return res.status(400).json({ message: "Email is required" });
-   // if (!email || !password) return res.status(400).json({ message: "Email and password required" });
-    if (!validator.isEmail(email)) return res.status(400).json({ message: "Invalid email" });
-    if (phone && !validator.isMobilePhone(phone, "any")) return res.status(400).json({ message: "Invalid phone" });
+    // if (!email || !password) return res.status(400).json({ message: "Email and password required" });
+    if (!validator.isEmail(email))
+      return res.status(400).json({ message: "Invalid email" });
+    if (phone && !validator.isMobilePhone(phone, "any"))
+      return res.status(400).json({ message: "Invalid phone" });
     // If permanent user already exists, refuse
     const existing = await User.findOne({ email });
-    if (existing) return res.status(400).json({ message: "Email already registered" });
+    if (existing)
+      return res.status(400).json({ message: "Email already registered" });
 
     // Generate OTP & expiry
     const otp = String(Math.floor(100000 + Math.random() * 900000));
@@ -57,7 +59,7 @@ export const registerUser = async (req, res) => {
       lastName,
       email,
       phone,
-   // passwordHash,
+      // passwordHash,
       gender,
       dateOfBirth,
       maritalStatus,
@@ -71,11 +73,17 @@ export const registerUser = async (req, res) => {
       otpExpiry,
     };
 
-    await PendingUser.findOneAndUpdate({ email }, pendingPayload, { upsert: true, new: true, setDefaultsOnInsert: true });
+    await PendingUser.findOneAndUpdate({ email }, pendingPayload, {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+    });
 
-     sendOtpEmail(email, otp)
+    sendOtpEmail(email, otp);
 
-    return res.status(200).json({ message: "OTP sent to email. Verify to complete registration." });
+    return res
+      .status(200)
+      .json({ message: "OTP sent to email. Verify to complete registration." });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -103,13 +111,11 @@ const getFullUserBundle = async (userId) => {
 
   //return { user, profile, preferences, gallery, subscription };
   return { user, profile, preferences, gallery };
-
 };
-
 
 // LOGIN
 // export const loginUser = async (req, res) => {
-//   try { 
+//   try {
 //     const { email, password } = req.body;
 
 //     const user = await User.findOne({ email }).select("+password");
@@ -122,7 +128,7 @@ const getFullUserBundle = async (userId) => {
 
 //     const accessToken = generateAccessToken(user._id, user.role);
 //     const refreshToken = generateRefreshToken(user._id);
-//       // ✅ Save refresh token in DB 
+//       // ✅ Save refresh token in DB
 //     user.refreshTokens.push(refreshToken);
 //     await user.save();
 
@@ -141,12 +147,10 @@ export const sendOtp = async (req, res) => {
       return res.status(400).json({ message: "Email required" });
     }
 
-    // ❌ If user is already registered, do NOT resend OTP
+    // If user is already registered, do NOT resend OTP
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res
-        .status(400)
-        .json({ message: "Email already registered" });
+      return res.status(400).json({ message: "Email already registered" });
     }
 
     // ✔ Check pending user
@@ -181,9 +185,9 @@ export const loginUser = async (req, res) => {
     // 🔹 Step 1: Find user
     const user = await User.findOne({ email }).select("+password");
     if (!user) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: "User not found" 
+        message: "User not found",
       });
     }
     // 🔹 Step 2: Validate password
@@ -207,7 +211,7 @@ export const loginUser = async (req, res) => {
     const accessToken = generateAccessToken(user._id, user.role);
     const refreshToken = generateRefreshToken(user._id);
 
-    user.refreshToken = refreshToken;   // store only one
+    user.refreshToken = refreshToken; // store only one
     await user.save();
 
     // 🔹 Step 5: Fetch merged user data
@@ -226,7 +230,6 @@ export const loginUser = async (req, res) => {
         ...bundle,
       },
     });
-
   } catch (error) {
     console.error("Login Error:", error);
     return res.status(500).json({
@@ -249,9 +252,15 @@ export const verifyOtp = async (req, res) => {
     if (purpose === "register") {
       const pending = await PendingUser.findOne({ email });
       if (!pending)
-        return res.status(404).json({ message: "No pending registration found" });
+        return res
+          .status(404)
+          .json({ message: "No pending registration found" });
 
-      if (!pending.otp || pending.otp !== otp || Date.now() > pending.otpExpiry) {
+      if (
+        !pending.otp ||
+        pending.otp !== otp ||
+        Date.now() > pending.otpExpiry
+      ) {
         return res.status(400).json({ message: "Invalid or expired OTP" });
       }
 
@@ -273,8 +282,8 @@ export const verifyOtp = async (req, res) => {
         lastName: pending.lastName,
         email: pending.email,
         phone: pending.phone,
-       // password: pending.passwordHash,
-       password:null,
+        //password: pending.passwordHash,
+        password: null,
         gender: pending.gender,
         dateOfBirth: pending.dateOfBirth,
         maritalStatus: pending.maritalStatus,
@@ -292,7 +301,7 @@ export const verifyOtp = async (req, res) => {
       const newUser = await User.create(userPayload);
       await PendingUser.deleteOne({ _id: pending._id });
 
-       // ==================================================
+      // ==================================================
       // ⭐ AUTO-CREATE USER PROFILE DETAIL —
       //    FIXES "Profile not found" on all pages
       // ==================================================
@@ -323,8 +332,7 @@ export const verifyOtp = async (req, res) => {
     if (purpose === "forgot") {
       const user = await User.findOne({ email }).select("+otp +otpExpiry");
 
-      if (!user)
-        return res.status(404).json({ message: "User not found" });
+      if (!user) return res.status(404).json({ message: "User not found" });
 
       if (!user.otp || user.otp !== otp || Date.now() > user.otpExpiry) {
         return res.status(400).json({ message: "Invalid or expired OTP" });
@@ -334,7 +342,6 @@ export const verifyOtp = async (req, res) => {
     }
 
     return res.status(400).json({ message: "Invalid purpose" });
-
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
@@ -342,7 +349,7 @@ export const verifyOtp = async (req, res) => {
   }
 };
 
-// Forgot PASSWORD 
+// Forgot PASSWORD
 export const forgotPassword = async (req, res) => {
   console.log("🔑 Forgot password request received");
   try {
@@ -372,40 +379,43 @@ export const forgotPassword = async (req, res) => {
 };
 
 // RESET PASSWORD
-
 export const resetPassword = async (req, res) => {
-
   try {
-    const { email, newPassword } = req.body;
+    const { email, newPassword, purpose } = req.body;
 
-    const user = await User.findOne({ email }).select("+password");
+    const user = await User.findOne({ email }).select("+password +otpExpiry");
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    // ✅ Verify OTP validity
-    // if (user.otp !== otp) {
-    //   return res.status(400).json({ message: "Invalid OTP" });
-    // }
 
-    if (Date.now() > user.otpExpiry) {
-      return res.status(400).json({ message: "OTP has expired" });
+    // 🔐 OTP expiry check ONLY for forgot password
+    if (purpose === "forgot") {
+      if (!user.otpExpiry || Date.now() > user.otpExpiry) {
+        return res.status(400).json({ message: "OTP has expired" });
+      }
     }
 
-    // ✅ Hash new password before saving
+    // ✅ Hash password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     user.password = hashedPassword;
     user.otp = null;
     user.otpExpiry = null;
 
+    // ✅ If first-time registration → activate account
+    if (purpose === "register") {
+      user.status = "Active";
+    }
+
     await user.save();
 
-    res.json({ message: "Password reset successful" });
+    res.json({ message: "Password set successfully" });
   } catch (error) {
     console.error("Reset password error:", error);
     res.status(500).json({ error: "Something went wrong" });
   }
 };
+
 // LOGOUT
 
 export const logoutUser = async (req, res) => {
@@ -445,7 +455,6 @@ export const logoutUser = async (req, res) => {
   }
 };
 
-
 export const refreshAccessToken = async (req, res) => {
   try {
     const { refreshToken } = req.body;
@@ -459,8 +468,7 @@ export const refreshAccessToken = async (req, res) => {
 
     // 🧩 3️⃣ Find user in DB
     const user = await User.findById(decoded._id);
-    if (!user)
-      return res.status(404).json({ message: "User not found" });
+    if (!user) return res.status(404).json({ message: "User not found" });
 
     // 🧩 4️⃣ Check if this refresh token still exists in DB
     if (!user.refreshTokens.includes(refreshToken)) {
@@ -482,37 +490,41 @@ export const refreshAccessToken = async (req, res) => {
   }
 };
 
-
 export const setPassword = async (req, res) => {
-  console.log("api heet")
+  console.log("api heet");
   try {
-    const { email, password } = req.body;
+    // support both { password } and { newPassword } from frontend
+    const { email, password, newPassword, purpose } = req.body;
+    const plain = password || newPassword;
 
-    if (!password)
-      return res.status(400).json({ message: "Password required" });
+    if (!plain) return res.status(400).json({ message: "Password required" });
 
     const user = await User.findOne({ email }).select("+password");
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Hash new password
-    const hash = await bcrypt.hash(password, 10);
-
+    // Hash and set password
+    const hash = await bcrypt.hash(plain, 10);
     user.password = hash;
-    user.status = "Active"; // CHANGED ↓
+
+    // Only activate account for register flow
+    if (purpose === "register" || user.status === "PendingPassword") {
+      user.status = "Active";
+    }
+
+    // clear any otp fields if present
+    user.otp = null;
+    user.otpExpiry = null;
+
     await user.save();
 
-    return res.json({ message: "Password set successfully. You can now login." });
-
+    return res.json({
+      message: "Password set successfully. You can now login.",
+    });
   } catch (err) {
-    console.log("setError", err)
+    console.log("setError", err);
     return res.status(500).json({ error: err.message });
-    
   }
 };
-
-
-
 
 // ID Generator Helper
 // ------------------
