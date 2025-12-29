@@ -372,7 +372,9 @@ export const forgotPassword = async (req, res) => {
 };
 
 // RESET PASSWORD
+
 export const resetPassword = async (req, res) => {
+
   try {
     const { email, newPassword } = req.body;
 

@@ -31,7 +31,7 @@ export const initializeSocket = (server) => {
   const onlineUsers = new Set();
 
   io.on("connection", (socket) => {
-   // console.log(`⚡ Socket connected: ${socket.id}`);
+    // console.log(`⚡ Socket connected: ${socket.id}`);
 
     // Client should emit 'userOnline' with their userId after connecting
     socket.on("userOnline", ({ userId }) => {
@@ -40,7 +40,7 @@ export const initializeSocket = (server) => {
       onlineUsers.add(userId.toString());
       // broadcast updated online users list
       io.emit("getOnlineUsers", Array.from(onlineUsers));
-    //  console.log(`👤 User online: ${userId}`);
+      //  console.log(`👤 User online: ${userId}`);
     });
 
     // Clean up on disconnect
@@ -48,83 +48,108 @@ export const initializeSocket = (server) => {
       if (socket.userId) {
         onlineUsers.delete(socket.userId.toString());
         io.emit("getOnlineUsers", Array.from(onlineUsers));
-      //  console.log(`❌ User disconnected: ${socket.userId}`);
+        //  console.log(`❌ User disconnected: ${socket.userId}`);
       } else {
         console.log(`❌ Socket disconnected: ${socket.id}`);
       }
     });
 
-    // Join a chat room
-    socket.on("joinChat", async ({ firstName, userId, targetUserId }) => {
-      const roomId = getSecretRoomId(userId, targetUserId);
-      socket.join(roomId);
-    //  console.log(`${firstName || userId} joined Room: ${roomId}`);
+    // Join a chat room (expects ChatRoom._id from client)
+    socket.on("joinChat", async ({ roomId, userId, firstName }) => {
+      if (!roomId) return;
+      try {
+        socket.join(String(roomId));
+      } catch (err) {
+        console.error("joinChat error:", err);
+      }
     });
 
     // Send a message event
-socket.on("sendMessage", async (data) => {
-  try {
-    const {
-      senderId,
-      receiverId,
-      message, // frontend uses message
-      roomId: ignoredRoomId, // not used because we compute our own
-    } = data;
+    socket.on("sendMessage", async (data, ack) => {
+      try {
+        const {
+          senderId,
+          receiverId,
+          message, // frontend uses message
+          roomId: providedRoomId, // prefer provided ChatRoom._id
+        } = data;
 
-    if (!senderId || !receiverId || !message) {
-      console.log("❌ Missing fields:", data);
-      return;
-    }
+        if (!senderId || !receiverId || !message) {
+          console.log("❌ Missing fields:", data);
+          return;
+        }
 
-    // Generate correct roomId
-    const roomId = getSecretRoomId(senderId, receiverId);
+        // Determine chatRoom (use provided roomId when available)
+        let chatRoom = null;
+        if (providedRoomId) {
+          chatRoom = await ChatRoom.findById(providedRoomId);
+        }
 
-    // Find or create chat room
-    let chatRoom = await ChatRoom.findOne({
-      participants: { $all: [senderId, receiverId] },
+        if (!chatRoom) {
+          // fallback: find or create by participants
+          chatRoom = await ChatRoom.findOne({
+            participants: { $all: [senderId, receiverId] },
+          });
+
+          if (!chatRoom) {
+            chatRoom = await ChatRoom.create({
+              participants: [senderId, receiverId],
+            });
+          }
+        }
+
+        // Save message in DB
+        const newMsg = await Message.create({
+          chatRoomId: chatRoom._id,
+          senderId,
+          receiverId,
+          message,
+        });
+
+        const payload = {
+          _id: newMsg._id,
+          chatRoomId: newMsg.chatRoomId,
+          senderId: newMsg.senderId,
+          receiverId: newMsg.receiverId,
+          message: newMsg.message,
+          createdAt: newMsg.createdAt,
+        };
+
+        // Ensure sender socket is in the room before emitting
+        try {
+          socket.join(String(chatRoom._id));
+        } catch (err) {
+          // ignore
+        }
+
+        // Emit to room using ChatRoom._id
+        io.to(String(chatRoom._id)).emit("messageReceived", payload);
+
+        // Acknowledge to sender with saved message
+        if (typeof ack === "function") ack({ data: payload });
+      } catch (err) {
+        console.error("❌ sendMessage ERROR:", err);
+      }
     });
 
-    if (!chatRoom) {
-      chatRoom = await ChatRoom.create({
-        participants: [senderId, receiverId],
-      });
-    }
-    // Save message in DB
-    const newMsg = await Message.create({
-      chatRoomId: chatRoom._id,
-      senderId,
-      receiverId,
-      message,
+    socket.on("leaveChat", ({ roomId }) => {
+      if (!roomId) return;
+      try {
+        socket.leave(String(roomId));
+      } catch (err) {
+        // ignore
+      }
     });
-
-    const payload = {
-      _id: newMsg._id,
-      chatRoomId: newMsg.chatRoomId,
-      senderId: newMsg.senderId,
-      receiverId: newMsg.receiverId,
-      message: newMsg.message,
-      createdAt: newMsg.createdAt,
-    };
-
-    // Emit to room
-    io.to(roomId).emit("messageReceived", payload);
-
-    //console.log("💬 Message saved & emitted:", payload);
-  } catch (err) {
-    console.error("❌ sendMessage ERROR:", err);
-  }
-});
-
 
     // Typing indicator
-    socket.on("typing", ({ userId, targetUserId }) => {
-      const roomId = getSecretRoomId(userId, targetUserId);
-      socket.to(roomId).emit("typing", { userId });
+    socket.on("typing", ({ roomId, userId }) => {
+      if (!roomId) return;
+      socket.to(String(roomId)).emit("typing", { userId });
     });
 
-    socket.on("stopTyping", ({ userId, targetUserId }) => {
-      const roomId = getSecretRoomId(userId, targetUserId);
-      socket.to(roomId).emit("stopTyping", { userId });
+    socket.on("stopTyping", ({ roomId, userId }) => {
+      if (!roomId) return;
+      socket.to(String(roomId)).emit("stopTyping", { userId });
     });
   });
 

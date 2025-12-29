@@ -212,7 +212,11 @@ export const getMatchFeed = async (req, res) => {
       if (preference?.heightRange) {
         maxScore += 15;
         const h = Number(p.height);
-        if (!Number.isNaN(h) && h >= Number(preference.heightRange.min) && h <= Number(preference.heightRange.max)) {
+        if (
+          !Number.isNaN(h) &&
+          h >= Number(preference.heightRange.min) &&
+          h <= Number(preference.heightRange.max)
+        ) {
           score += 15;
         }
       }
@@ -269,7 +273,9 @@ export const getMatchFeed = async (req, res) => {
 
     // religionMatches: same religion (and not already used)
     const religionMatches = scoredProfiles.filter(
-      (p) => !used.has(p._id.toString()) && equalsCI(p.religion, currentProfile.religion)
+      (p) =>
+        !used.has(p._id.toString()) &&
+        equalsCI(p.religion, currentProfile.religion)
     );
 
     religionMatches.forEach((m) => used.add(m._id.toString()));
@@ -278,21 +284,32 @@ export const getMatchFeed = async (req, res) => {
     const locationMatches = scoredProfiles.filter(
       (p) =>
         !used.has(p._id.toString()) &&
-        (equalsCI(p.city, currentProfile.city) || equalsCI(p.state, currentProfile.state))
+        (equalsCI(p.city, currentProfile.city) ||
+          equalsCI(p.state, currentProfile.state))
     );
-    
+
     locationMatches.forEach((m) => used.add(m._id.toString()));
 
     // fallback: everything else not used
-    const fallbackMatches = scoredProfiles.filter((p) => !used.has(p._id.toString()));
+    const fallbackMatches = scoredProfiles.filter(
+      (p) => !used.has(p._id.toString())
+    );
 
     // ---------------------------
     // Sort each category by matchPercentage DESC
     // ---------------------------
-    perfectMatches.sort((a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0));
-    religionMatches.sort((a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0));
-    locationMatches.sort((a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0));
-    fallbackMatches.sort((a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0));
+    perfectMatches.sort(
+      (a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0)
+    );
+    religionMatches.sort(
+      (a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0)
+    );
+    locationMatches.sort(
+      (a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0)
+    );
+    fallbackMatches.sort(
+      (a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0)
+    );
 
     // 6️⃣ Apply pagination meta (we keep categories intact; page & totalPages returned)
     const totalProfiles = validProfiles.length;
@@ -313,93 +330,104 @@ export const getMatchFeed = async (req, res) => {
   }
 };
 
-
-//opposite gender API
+// opposite gender API (improved)
 export const getOppositeGenderProfiles = async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = String(req.user._id);
 
     const page = Number(req.query.page) || 1;
-    const limit = Number(req.query.limit) || 20;
+    const limit = Math.max(1, Number(req.query.limit) || 20);
     const skip = (page - 1) * limit;
 
     // 1️⃣ Load current user
-    const currentUser = await User.findById(userId);
+    const currentUser = await User.findById(userId).lean();
     const oppositeGender =
-      currentUser.gender?.toLowerCase() === "male" ? "female" : "male";
+      (currentUser?.gender || "").toLowerCase() === "male" ? "female" : "male";
 
-    // 2️⃣ Get all opposite-gender USERS
+    // 2️⃣ Get opposite-gender user ids
     const oppositeUserIds = await User.find({
       gender: oppositeGender,
-      status: "Active", // optional: recommended
+      status: "Active",
     }).distinct("_id");
 
-    // 3️⃣ Get all opposite-gender PROFILES
-    let allProfiles = await UserProfileDetail.find({
-      userId: { $in: oppositeUserIds },
-      isProfileVisible: true,
-    })
-      .populate(
-        "userId",
-        "firstName lastName profilePhoto gender email registrationId "
-      )
-      .lean();
-
-    // 4️⃣ Remove BLOCKED users
-    const blocked = await MatchRequest.find({
+    // 3️⃣ Find blocked relationships that involve the current user
+    const blockedRows = await MatchRequest.find({
       status: "Blocked",
       $or: [{ senderId: userId }, { receiverId: userId }],
+    }).lean();
+
+    // Build set of other-party ids that are blocked relative to current user
+    const blockedOtherIds = new Set();
+    blockedRows.forEach((r) => {
+      const s = String(r.senderId);
+      const rId = String(r.receiverId);
+      if (s === userId) blockedOtherIds.add(rId);
+      else if (rId === userId) blockedOtherIds.add(s);
+      else {
+        // fallback: add both
+        blockedOtherIds.add(s);
+        blockedOtherIds.add(rId);
+      }
     });
 
-    const blockedIds = new Set();
-    blocked.forEach((r) => {
-      blockedIds.add(String(r.senderId));
-      blockedIds.add(String(r.receiverId));
-    });
+    // 4️⃣ Allowed opposite user ids (exclude blocked)
+    const allowedOppositeIds = oppositeUserIds
+      .map((id) => String(id))
+      .filter((id) => !blockedOtherIds.has(id) && id !== userId);
 
-    blockedIds.delete(String(userId));
+    // 5️⃣ Build query for profiles and count
+    const match = {
+      userId: { $in: allowedOppositeIds },
+      isProfileVisible: true,
+    };
 
-    allProfiles = allProfiles.filter(
-      (p) => !blockedIds.has(String(p.userId._id))
-    );
+    const total = await UserProfileDetail.countDocuments(match);
 
-    // 5️⃣ Pagination AFTER filtering
-    const total = allProfiles.length;
-    const profiles = allProfiles.slice(skip, skip + limit);
+    // 6️⃣ Query paginated profiles with a stable sort (createdAt or _id)
+    const profiles = await UserProfileDetail.find(match)
+      .populate(
+        "userId",
+        "firstName lastName profilePhoto gender email registrationId"
+      )
+      .sort({ createdAt: -1 }) // stable descending newest-first
+      .skip(skip)
+      .limit(limit)
+      .lean();
 
-    // 6️⃣ Attach photos
+    // 7️⃣ Attach photos (for the profiles on this page)
     const gallery = await UserPhotoGallery.find({
       userProfileId: profiles.map((p) => p._id),
       isProfilePhoto: true,
-    });
+    }).lean();
 
     const photoMap = {};
-    gallery.forEach((g) => (photoMap[g.userProfileId] = g.imageUrl));
+    gallery.forEach((g) => (photoMap[String(g.userProfileId)] = g.imageUrl));
 
-    // 7️⃣ Interest flags
+    // 8️⃣ Interest flags (only for the visible page)
     const ids = profiles.map((p) => String(p.userId._id));
 
     const sent = await MatchRequest.find({
       senderId: userId,
       receiverId: { $in: ids },
       type: "Interest",
-    });
+    }).lean();
 
     const received = await MatchRequest.find({
       senderId: { $in: ids },
       receiverId: userId,
       type: "Interest",
-    });
+    }).lean();
 
     const sentSet = new Set(sent.map((r) => String(r.receiverId)));
     const receivedSet = new Set(received.map((r) => String(r.senderId)));
 
     const finalProfiles = profiles.map((p) => ({
       ...p,
-      profilePhoto: p.profilePhoto || photoMap[p._id] || null, // ✅ FIX
-      hasSentInterest: sentSet.has(String(p.userId._id)),
+      profilePhoto: p.profilePhoto || photoMap[String(p._id)] || null,
+      hasSentInterest: sentSet.has(String(p.userId._1d || p.userId._id)),
       hasReceivedInterest: receivedSet.has(String(p.userId._id)),
-      isBlocked: false,
+      // include registrationId as string for predictable client-side search
+      registrationId: String(p.userId?.registrationId || ""),
     }));
 
     res.json({
@@ -414,6 +442,7 @@ export const getOppositeGenderProfiles = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
 
 // 2️⃣ Send Interest
 export const sendInterest = async (req, res) => {
@@ -507,25 +536,6 @@ export const sendChatRequest = async (req, res) => {
     const { receiverId } = req.body;
     const senderId = req.user._id;
 
-    const sub = req.subscription; // injected by subscriptionMiddleware
-
-    if (!sub || !sub.planId.features.chatAllowed) {
-      return res.status(403).json({
-        message:
-          "Your plan does not allow chat. Please upgrade your membership.",
-      });
-    }
-
-    if (!receiverId) {
-      return res.status(400).json({ message: "receiverId is required" });
-    }
-
-    if (senderId.toString() === receiverId.toString()) {
-      return res
-        .status(400)
-        .json({ message: "You cannot send chat request to yourself" });
-    }
-
     const isBlocked = await hasBlockedBetween(senderId, receiverId);
     if (isBlocked) {
       return res
@@ -591,8 +601,8 @@ export const sendChatRequest = async (req, res) => {
 // view profile controller
 export const viewProfile = async (req, res) => {
   try {
-    const { id } = req.params;        // profile being viewed
-    const viewerId = req.user._id;    // logged-in user
+    const { id } = req.params; // profile being viewed
+    const viewerId = req.user._id; // logged-in user
 
     const subscription = req.subscription; // injected via middleware
 
@@ -663,6 +673,11 @@ export const viewProfile = async (req, res) => {
       });
     }
 
+    const photos = await UserPhotoGallery.find({
+      userProfileId: profile.userId._id, // ✅ MATCHES REAL DATA
+      visibility: "public",
+    }).select("imageUrl isProfilePhoto visibility uploadedAt");
+
     /* -------------------------------------------------
        🔔 ACTIVITY LOG (optional but clean)
     --------------------------------------------------*/
@@ -683,6 +698,7 @@ export const viewProfile = async (req, res) => {
     return res.status(200).json({
       message: "Profile viewed successfully",
       profile,
+      photos,
     });
   } catch (error) {
     console.error("View profile error:", error);
@@ -691,7 +707,6 @@ export const viewProfile = async (req, res) => {
     });
   }
 };
-
 
 // filter matches
 export const filterMatches = async (req, res) => {
@@ -916,7 +931,9 @@ export const unblockUser = async (req, res) => {
       String(request.receiverId) === String(userId);
 
     if (!isParticipant) {
-      return res.status(403).json({ message: "Not authorized to unblock this user" });
+      return res
+        .status(403)
+        .json({ message: "Not authorized to unblock this user" });
     }
 
     // Option A (recommended): mark the block as cancelled to keep history
@@ -927,10 +944,13 @@ export const unblockUser = async (req, res) => {
     // await MatchRequest.deleteOne({ _id: request._id });
 
     // optional: notify the other user
-    const unblockerName = `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim();
-    const otherIdToNotify = String(userId) === String(request.senderId)
-      ? request.receiverId
-      : request.senderId;
+    const unblockerName = `${req.user.firstName || ""} ${
+      req.user.lastName || ""
+    }`.trim();
+    const otherIdToNotify =
+      String(userId) === String(request.senderId)
+        ? request.receiverId
+        : request.senderId;
 
     await createActivity(
       otherIdToNotify,
@@ -951,7 +971,6 @@ export const unblockUser = async (req, res) => {
   }
 };
 
-
 export const getPendingRequests = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -971,39 +990,79 @@ export const getPendingRequests = async (req, res) => {
   }
 };
 
-
 const buildDashboardList = async ({ userId, type, status, onlyChat }) => {
   // ⛔ This function returns ONLY CLEAN, RENDERABLE USERS
 
-  let includeStatuses = ["Pending", "Accepted"];
+  const normalizeStatuses = (status) => {
+    if (!status || status === "active") return null;
+    return status.split(",").map((s) => s.trim());
+  };
 
-// ❌ duplicated & conflicting
-if (status === "Blocked") {
-  includeStatuses = ["Blocked"];
-} else if (status && status !== "active") {
-  includeStatuses = status.split(",").map(s => s.trim());
-}
-
-if (status && status !== "active") {
-  includeStatuses = status.split(",").map(s => s.trim());
-}
+  const includeStatuses = normalizeStatuses(status);
 
   let filter = {};
 
+  // if (type === "interaction") {
+  //   filter = {
+  //     $or: [{ senderId: userId }, { receiverId: userId }],
+  //     status: "Accepted", // ✅ interaction = accepted only
+  //   };
+  // }
   if (type === "interaction") {
     filter = {
       $or: [{ senderId: userId }, { receiverId: userId }],
-      status: { $in: includeStatuses },
+      status: { $in: ["Accepted", "Pending"] },
     };
   } else {
-    filter.status = { $in: includeStatuses };
-    if (onlyChat) filter.type = "Chat";
+    if (includeStatuses) {
+      filter.status = { $in: includeStatuses };
+    }
 
+    if (onlyChat) filter.type = "Chat";
     if (type === "received") filter.receiverId = userId;
     if (type === "sent") filter.senderId = userId;
   }
 
-  const requests = await MatchRequest.find(filter).lean();
+  const rawRequests = await MatchRequest.find(filter).lean();
+
+  // Ensure deterministic ordering: sort by updatedAt -> createdAt -> ObjectId timestamp (desc)
+  // This guarantees the first record encountered per pair is the latest one even when timestamps
+  // are missing or queries return results in arbitrary order.
+  rawRequests.sort((x, y) => {
+    const getTime = (r) => {
+      if (r && r.updatedAt) return new Date(r.updatedAt).getTime();
+      if (r && r.createdAt) return new Date(r.createdAt).getTime();
+      // fallback to ObjectId timestamp (works even when timestamps are not enabled)
+      if (r && r._id && typeof r._id.getTimestamp === "function")
+        return r._id.getTimestamp().getTime();
+      return 0;
+    };
+
+    return getTime(y) - getTime(x);
+  });
+
+  // ✅ DEDUPE: keep only latest request per user pair
+  const latestMap = new Map();
+
+  for (const r of rawRequests) {
+    const a = String(r.senderId);
+    const b = String(r.receiverId);
+    const pairKey = a < b ? `${a}_${b}` : `${b}_${a}`;
+
+    if (!latestMap.has(pairKey)) {
+      latestMap.set(pairKey, r);
+    } else {
+      const existing = latestMap.get(pairKey);
+      const existingTime = new Date(existing.updatedAt || existing.createdAt);
+      const currentTime = new Date(r.updatedAt || r.createdAt);
+
+      if (currentTime > existingTime) {
+        latestMap.set(pairKey, r);
+      }
+    }
+  }
+
+  const requests = Array.from(latestMap.values());
 
   const otherIds = new Set();
   const safeRequests = [];
@@ -1014,7 +1073,9 @@ if (status && status !== "active") {
 
     const other =
       type === "interaction"
-        ? sender === String(userId) ? receiver : sender
+        ? sender === String(userId)
+          ? receiver
+          : sender
         : type === "received"
         ? sender
         : receiver;
@@ -1030,14 +1091,14 @@ if (status && status !== "active") {
     .lean();
 
   const userMap = {};
-  users.forEach(u => (userMap[String(u._id)] = u));
+  users.forEach((u) => (userMap[String(u._id)] = u));
 
   const profiles = await UserProfileDetail.find({
     userId: { $in: [...otherIds] },
   }).lean();
 
   const profileMap = {};
-  profiles.forEach(p => (profileMap[String(p.userId)] = p));
+  profiles.forEach((p) => (profileMap[String(p.userId)] = p));
 
   const photos = await UserPhotoGallery.find({
     userProfileId: { $in: [...otherIds] },
@@ -1045,10 +1106,10 @@ if (status && status !== "active") {
   }).lean();
 
   const photoMap = {};
-  photos.forEach(p => (photoMap[String(p.userProfileId)] = p.imageUrl));
+  photos.forEach((p) => (photoMap[String(p.userProfileId)] = p.imageUrl));
 
-  return safeRequests
-    .map(r => {
+  let results = safeRequests
+    .map((r) => {
       const u = userMap[r.otherId];
       if (!u) return null;
 
@@ -1064,17 +1125,31 @@ if (status && status !== "active") {
         maritalStatus: profile.maritalStatus || "",
         city: profile.city || "",
         state: profile.state || "",
-        actionStatus: r.status,         // Pending | Accepted | Rejected | Blocked
-  direction:
-    String(r.senderId) === String(userId)
-      ? "sent"
-      : "received",
+        actionStatus: r.status, // Pending | Accepted | Rejected | Blocked
+        direction: String(r.senderId) === String(userId) ? "sent" : "received",
 
         status: r.status,
         requestId: r._id,
       };
     })
     .filter(Boolean);
+
+  // Defensive: ensure server honors requested statuses
+  if (includeStatuses) {
+    results = results.filter((x) => includeStatuses.includes(x.status));
+  }
+
+  // Defensive dedupe by user id: ensure each user appears only once
+  const seen = new Set();
+  const unique = [];
+  for (const r of results) {
+    const key = String(r._id);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(r);
+  }
+
+  return unique;
 };
 
 export const getDashboardStats = async (req, res) => {
@@ -1106,17 +1181,16 @@ export const getDashboardStats = async (req, res) => {
     });
 
     const receivedRejected = await buildDashboardList({
-  userId,
-  type: "received",
-  status: "Rejected",
-});
+      userId,
+      type: "received",
+      status: "Rejected",
+    });
 
-const sentRejected = await buildDashboardList({
-  userId,
-  type: "sent",
-  status: "Rejected",
-});
-
+    const sentRejected = await buildDashboardList({
+      userId,
+      type: "sent",
+      status: "Rejected",
+    });
 
     const interactions = await buildDashboardList({
       userId,
@@ -1125,13 +1199,13 @@ const sentRejected = await buildDashboardList({
     });
 
     const totalChats = await ChatRoom.countDocuments({
-  participants: userId,
-});
-const blockedByMe = await buildDashboardList({
-  userId,
-  type: "sent",
-  status: "Blocked",
-});
+      participants: userId,
+    });
+    const blockedByMe = await buildDashboardList({
+      userId,
+      type: "sent",
+      status: "Blocked",
+    });
 
     res.json({
       received: {
@@ -1144,22 +1218,21 @@ const blockedByMe = await buildDashboardList({
         acceptedByOthers: sentAccepted.length,
         declinedByOthers: sentRejected.length,
       },
-      
+
       interactions: {
         total: interactions.length,
       },
-       chats: {
-    totalChats, // ✅ FIXED
-  },
-  blocked: {
-    total: blockedByMe.length, // ✅ NEW
-  },
+      chats: {
+        totalChats, // ✅ FIXED
+      },
+      blocked: {
+        total: blockedByMe.length, // ✅ NEW
+      },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-
 
 export const getDashboardRequestList = async (req, res) => {
   try {
@@ -1174,20 +1247,15 @@ export const getDashboardRequestList = async (req, res) => {
     });
     const finalUsers =
       type === "interaction"
-        ? users.map(u => ({ ...u, mode: "interaction" }))
+        ? users.map((u) => ({ ...u, mode: "interaction" }))
         : users;
 
     res.json({
       message: "List fetched",
-       total: finalUsers.length,
+      total: finalUsers.length,
       users: finalUsers,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-
-
-
-
-

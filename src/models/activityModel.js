@@ -33,6 +33,7 @@ const activitySchema = new mongoose.Schema(
         "ChatRequestRejected",
         "ProfileViewed",
         "UserBlocked",
+        "UserUnblocked"
       ],
       required: true,
       index: true

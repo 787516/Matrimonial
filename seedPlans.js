@@ -15,7 +15,7 @@ mongoose
       {
         name: "FREE",
         price: 0,
-        durationInDays: 30,
+        
         features: {
           canViewContacts: false,
           maxProfileViews: 1,

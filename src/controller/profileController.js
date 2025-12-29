@@ -68,11 +68,24 @@ export const getUserProfile = async (req, res) => {
       fallbackPhoto?.imageUrl || 
       null;
 
+      // ================================
+// 🖼️ Fetch ALL Gallery Photos
+// ================================
+const photos = await UserPhotoGallery.find({
+  userProfileId: userId,   // ✅ SAME RULE AS viewProfile
+  visibility: "public",
+})
+  .select("imageUrl isProfilePhoto visibility uploadedAt")
+  .sort({ isProfilePhoto: -1, createdAt: 1 })
+  .lean();
+
+
     res.status(200).json({
       success: true,
       message: "Profile fetched successfully",
       profile,
       partnerPreference: partnerPreference || null,
+      photos,
     });
 
   } catch (error) {

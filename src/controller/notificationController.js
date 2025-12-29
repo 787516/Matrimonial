@@ -299,7 +299,7 @@ export const createActivity = async (
       isRead: false,
     });
 
-    console.log(`✅ Activity logged: ${activityType} for user ${userId}`);
+    //console.log(`✅ Activity logged: ${activityType} for user ${userId}`);
     return activity;
   } catch (error) {
     console.error("❌ Error creating activity:", error);
