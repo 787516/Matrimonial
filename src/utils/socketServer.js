@@ -3,10 +3,13 @@ import crypto from "crypto";
 import ChatRoom from "../models/chatRoomModel.js";
 import Message from "../models/messageModel.js";
 import { createActivity } from "../controller/notificationController.js"; // 👈 Import activity logger
-
 /**
  * Helper to create unique room ID for 2 users
+ * 
  */
+
+let ioInstance = null;
+
 const getSecretRoomId = (userId, targetUserId) => {
   return crypto
     .createHash("sha256")
@@ -26,6 +29,8 @@ export const initializeSocket = (server) => {
       credentials: true,
     },
   });
+
+  ioInstance = io;
 
   // Track online users (by userId)
   const onlineUsers = new Set();
@@ -59,6 +64,11 @@ export const initializeSocket = (server) => {
       if (!roomId) return;
       try {
         socket.join(String(roomId));
+        console.log(
+          `Socket ${socket.id} (user:${userId}) joined room ${roomId}`
+        );
+        console.log(" Emitting to room:", roomId);
+
       } catch (err) {
         console.error("joinChat error:", err);
       }
@@ -73,6 +83,7 @@ export const initializeSocket = (server) => {
           message, // frontend uses message
           roomId: providedRoomId, // prefer provided ChatRoom._id
         } = data;
+        
 
         if (!senderId || !receiverId || !message) {
           console.log("❌ Missing fields:", data);
@@ -118,11 +129,15 @@ export const initializeSocket = (server) => {
         // Ensure sender socket is in the room before emitting
         try {
           socket.join(String(chatRoom._id));
+          console.log(
+            `Socket ${socket.id} (sender:${senderId}) joined room ${chatRoom._id} before emit`
+          );
         } catch (err) {
-          // ignore
+          console.error("join before emit error:", err);
         }
 
         // Emit to room using ChatRoom._id
+        console.log(`Emitting message ${newMsg._id} to room ${chatRoom._id}`);
         io.to(String(chatRoom._id)).emit("messageReceived", payload);
 
         // Acknowledge to sender with saved message
@@ -154,4 +169,13 @@ export const initializeSocket = (server) => {
   });
 
   return io;
+};
+
+
+// 🔥 ADD THIS EXPORT
+export const getIO = () => {
+  if (!ioInstance) {
+    throw new Error("Socket.io not initialized");
+  }
+  return ioInstance;
 };

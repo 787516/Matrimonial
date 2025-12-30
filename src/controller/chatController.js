@@ -6,6 +6,7 @@ import MatchRequest from "../models/matchRequestModel.js"; // ✅ for Interest /
 import { createActivity } from "./notificationController.js";
 import UserProfileDetail from "../models/userProfileDetailModel.js";
 import UserPhotoGallery from "../models/userPhotoGalleryModel.js";
+import { getIO } from "../utils/socketServer.js";
 
 // 🔹 Helper: check if there is any 'Blocked' relationship between 2 users
 const hasBlockedBetween = async (userAId, userBId) => {
@@ -230,6 +231,32 @@ export const getChatList = async (req, res) => {
  *  - Only message sender can delete
  *  - Hard delete (global) for now (closest to existing behavior)
  */
+// export const deleteMessage = async (req, res) => {
+//   try {
+//     const { messageId } = req.params;
+//     const userId = req.user._id;
+
+//     const msg = await Message.findById(messageId);
+//     if (!msg) {
+//       return res.status(404).json({ message: "Message not found" });
+//     }
+
+//     // Only sender can delete the message
+//     if (msg.senderId.toString() !== userId.toString()) {
+//       return res
+//         .status(403)
+//         .json({ message: "You are not allowed to delete this message" });
+//     }
+
+//     await Message.findByIdAndDelete(messageId);
+
+//     res.json({ message: "Message deleted" });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// };
+
+
 export const deleteMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -240,20 +267,24 @@ export const deleteMessage = async (req, res) => {
       return res.status(404).json({ message: "Message not found" });
     }
 
-    // Only sender can delete the message
     if (msg.senderId.toString() !== userId.toString()) {
-      return res
-        .status(403)
-        .json({ message: "You are not allowed to delete this message" });
+      return res.status(403).json({ message: "Not allowed" });
     }
 
     await Message.findByIdAndDelete(messageId);
+
+    // ✅ LIVE DELETE
+    const io = getIO();
+    io.to(String(msg.chatRoomId)).emit("messageDeleted", {
+      messageId,
+    });
 
     res.json({ message: "Message deleted" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
+
 
 export const deleteChatRoom = async (req, res) => {
   try {

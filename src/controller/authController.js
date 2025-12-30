@@ -525,7 +525,6 @@ export const setPassword = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
-
 // ID Generator Helper
 // ------------------
 function generateRegistrationId() {

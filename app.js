@@ -22,7 +22,7 @@ import cors from "cors";
 
 app.use(
   cors({
-    origin: ["http://localhost:5173", "http://localhost:3000"],// allow your React app
+    origin: ["http://localhost:5173", "http://localhost:3000" ,   "http://localhost:5174",],// allow your React app
     credentials: true,                // allow cookies / headers
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], // allowed HTTP methods
   })
