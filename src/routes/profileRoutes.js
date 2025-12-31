@@ -8,12 +8,14 @@ import {
   addPhoto,
   getGallery,
   deletePhoto,
+  getMe,
 } from "../controller/profileController.js";
 import upload from "../middleware/multer.js";
 
 const router = express.Router();
 
 router.get("/details/:id", authMiddleware, getUserProfile);
+router.get("/me", authMiddleware, getMe);
 router.put("/update", authMiddleware, updateUserProfile);
 router.post("/preferences", authMiddleware, upsertPartnerPreference);
 router.get("/preferences", authMiddleware, getPartnerPreference);

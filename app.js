@@ -46,7 +46,6 @@ const server = http.createServer(app);
 // Initialize Socket.IO server
 initializeSocket(server);
 
-
 // ✅ Use routes
 app.use("/api/auth", authRoute);
 app.use("/api/profile", profileRoute);

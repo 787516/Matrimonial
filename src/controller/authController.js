@@ -90,7 +90,7 @@ export const registerUser = async (req, res) => {
 };
 
 // 🔥 Helper: fetch full merged data for user
-const getFullUserBundle = async (userId) => {
+export const getFullUserBundle = async (userId) => {
   const user = await User.findById(userId).select("-password -otp -otpExpiry");
 
   const profile = await UserProfileDetail.findOne({ userId });

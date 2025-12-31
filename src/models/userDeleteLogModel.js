@@ -6,10 +6,13 @@ const userDeleteLogSchema = new mongoose.Schema(
     reasonType: {
       type: String,
      // enum: ["Marriage Fixed", "Married", "Other Reason"],
+      enum: ["Marriage Fixed", "Other Reason"],
       required: true,
     },
     marriageDate: Date,
-    groomName: { type: String, trim: true },
+    //groomName: { type: String, trim: true },
+    partnerName: { type: String, trim: true },
+    partnerRegistrationId : {type: String, trim: true},
     source: {
       type: String,
       //enum: ["Shubh Mangal Sohala Matrimony", "Other Matrimony", "Other Source"],

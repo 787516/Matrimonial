@@ -3,6 +3,8 @@ import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import validator from "validator";
+// import crypto from "crypto";
+
 
 // Optional: allowed values (NOT enums – just for our own validation/messages)
 const ALLOWED_PROFILE_FOR = [
@@ -227,6 +229,13 @@ const userSchema = new mongoose.Schema(
       },
     },
 
+    // Store hashed tokens — safer than raw tokens
+emailChangeApprovalTokenHash: { type: String, default: null },
+emailChangeApprovalTokenExpiry: { type: Date, default: null },
+
+emailChangeCanceled: { type: Boolean, default: false },
+emailChangeApproved: { type: Boolean, default: false },
+
     deactivation: {
       isDeactivated: { type: Boolean, default: false },
       reason: { type: String },
@@ -293,6 +302,13 @@ userSchema.methods.toJSON = function () {
   delete obj.otpExpiry;
   return obj;
 };
+
+// function createToken() {
+//   const raw = crypto.randomBytes(32).toString("hex"); // 64 chars
+//   const hash = crypto.createHash("sha256").update(raw).digest("hex");
+//   return { raw, hash };
+// }
+
 
 const UserModel = mongoose.model("User", userSchema);
 export default UserModel;

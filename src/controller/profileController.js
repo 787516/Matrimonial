@@ -5,7 +5,7 @@ import UserPhotoGallery from "../models/userPhotoGalleryModel.js";
 import mongoose from "mongoose";
 import cloudinary from "../config/cloudinary.js";
 import fs from "fs";
-
+import { getFullUserBundle } from "./authController.js"
 
 // function normalizeProfile(obj) {
 //   const cap = (v) =>
@@ -27,6 +27,8 @@ import fs from "fs";
 
 // ✅ Fetch complete user profile (joins User + Profile)
 // ✅ Fetch complete user profile (User + Profile + Profile Photo)
+
+
 export const getUserProfile = async (req, res) => {
   try {
     const userId = req.params.id;
@@ -98,6 +100,24 @@ const photos = await UserPhotoGallery.find({
   }
 };
 
+
+
+export const getMe = async (req, res) => {
+  try {
+    const userId = req.user._id; // from authMiddleware
+
+    const bundle = await getFullUserBundle(userId);
+
+    if (!bundle?.user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.json(bundle);
+  } catch (error) {
+    console.error("GET /auth/me error:", error);
+    res.status(500).json({ message: "Failed to fetch user data" });
+  }
+};
 
 // ✅ Create or Update Profile
 
