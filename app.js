@@ -59,6 +59,8 @@ app.use("/api/castes", caste);
 app.use("/api/castes", casteSearch);
 app.use("/api/help", helpRoutes);
 
+
+
 app.get('/', (req, res) => {
     res.send('Welcome to Matrimonial Backend!');
 });

@@ -1,15 +1,20 @@
 import crypto from "crypto";
 import UserSubscription from "../models/userSubscriptionModel.js";
-import SubscriptionPlan from "../models/subscriptionPlanModel.js";
 import sendSubscriptionEmail from "../utils/sendSubscriptionEmail.js";
+
+const generateInvoiceNumber = () => {
+  const date = new Date();
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const rand = Math.floor(1000 + Math.random() * 9000);
+  return `INV-${yyyy}${mm}${dd}-${rand}`;
+};
 
 export const razorpayWebhook = async (req, res) => {
   try {
-    console.log("🔥 Webhook hit");
-
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
     const signature = req.headers["x-razorpay-signature"];
-
     const rawBody = req.body.toString("utf8");
 
     const expectedSignature = crypto
@@ -18,12 +23,10 @@ export const razorpayWebhook = async (req, res) => {
       .digest("hex");
 
     if (expectedSignature !== signature) {
-      console.log("❌ Invalid signature");
       return res.status(400).json({ message: "Invalid signature" });
     }
 
     const event = JSON.parse(rawBody);
-    console.log("Webhook event:", event.event);
 
     if (event.event === "payment_link.paid") {
       const paymentLinkId = event.payload.payment_link.entity.id;
@@ -34,14 +37,25 @@ export const razorpayWebhook = async (req, res) => {
         .populate("userId");
 
       if (!sub) {
-        console.log("❌ No subscription found for", paymentLinkId);
         return res.json({ status: "no_subscription" });
       }
 
+      // Dates
       const duration = sub.planId.durationInDays;
       const startDate = new Date();
       const endDate = new Date();
       endDate.setDate(endDate.getDate() + duration);
+
+      // ✅ GST CALCULATION (FIX)
+      const GST_RATE = 0.18;
+      const totalAmount = sub.planId.price;
+
+      const baseAmount = +(totalAmount / (1 + GST_RATE)).toFixed(2);
+      const taxAmount = +(totalAmount - baseAmount).toFixed(2);
+      const taxPercent = 18;
+
+      const invoiceNumber = generateInvoiceNumber();
+      const invoiceDate = new Date();
 
       const updated = await UserSubscription.findByIdAndUpdate(
         sub._id,
@@ -50,25 +64,38 @@ export const razorpayWebhook = async (req, res) => {
           paymentId,
           startDate,
           endDate,
+          invoiceNumber,
+          invoiceDate,
+          baseAmount,
+          taxAmount,
+          taxPercent,
         },
         { new: true }
       );
-      // 📧 SEND SUBSCRIPTION EMAIL 
+
+      // 📧 SEND EMAIL (NOW WITH CORRECT GST)
       await sendSubscriptionEmail({
         email: sub.userId.email,
         name: sub.userId.firstName || "User",
         planName: sub.planId.name,
-        amount: sub.planId.price,
+        amount: totalAmount,
         startDate: startDate.toDateString(),
         endDate: endDate.toDateString(),
         paymentId,
+        invoiceNumber,
+        invoiceDate: invoiceDate.toDateString(),
+        baseAmount,
+        taxAmount,
+        gstEnabled: true,
+        gstRate: GST_RATE,
       });
-      console.log("✅ Subscription activated & email sent");
-      console.log("✅ Subscription activated:", updated);
+
+      console.log("✅ Subscription activated & email sent", updated);
     }
+
     return res.json({ status: "ok" });
   } catch (err) {
-    console.log("Webhook error:", err);
+    console.error("Webhook error:", err);
     return res.status(500).json({ error: err.message });
   }
 };

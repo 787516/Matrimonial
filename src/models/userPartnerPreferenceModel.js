@@ -12,7 +12,7 @@ const preferenceSchema = new mongoose.Schema(
     // BASIC
     maritalStatus: [{
       type: String,
-      enum: ["Never Married", "Divorced", "Widowed", "Separated", "Awaiting Divorce"]
+      enum: ["UnMarried", "Divorced", "Widowed", "Separated", "Awaiting Divorce"]
     }],
     ageRange: {
       min: {

@@ -121,7 +121,7 @@ async function sendOtpEmail(email, otp = null, purpose = "registration", options
 
       default:
         // This should never run due to ALLOWED_PURPOSES guard, but keep fallback
-        subject = "Your OTP Verification Code - Matrimony App 💍";
+        subject = "Your OTP Verification Code - SnehaBandh Matrimony 💍";
         introMessage = "Use the OTP below to verify your email.";
     }
 
@@ -134,7 +134,7 @@ async function sendOtpEmail(email, otp = null, purpose = "registration", options
         <div style="max-width:600px;margin:0 auto;background:white;border-radius:10px;overflow:hidden">
           
           <div style="background:#d92332;padding:20px;text-align:center;color:#fff;font-size:22px">
-            Matrimony App
+            SnehaBandh Matrimony
           </div>
 
           <div style="padding:30px;font-size:15px;color:#333">
@@ -160,7 +160,7 @@ async function sendOtpEmail(email, otp = null, purpose = "registration", options
           </div>
 
           <div style="background:#eee;padding:12px;text-align:center;font-size:12px;color:#777">
-            © ${new Date().getFullYear()} Matrimony App
+            © ${new Date().getFullYear()} SnehaBandh Matrimony
           </div>
 
         </div>
