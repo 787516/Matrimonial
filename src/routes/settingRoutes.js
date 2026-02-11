@@ -10,6 +10,7 @@ import {
 } from "../controller/userSettingsController.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
 
+
 const router = express.Router();
 
 // ✅ Email update flow

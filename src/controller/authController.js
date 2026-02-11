@@ -146,7 +146,6 @@ export const sendOtp = async (req, res) => {
     if (!email) {
       return res.status(400).json({ message: "Email required" });
     }
-
     // If user is already registered, do NOT resend OTP
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -532,3 +531,69 @@ function generateRegistrationId() {
   const randomNum = Math.floor(100000 + Math.random() * 900000); // 6 digits
   return `${prefix}${randomNum}`;
 }
+
+
+
+
+export const resendOtp = async (req, res) => {
+  try {
+    const email = req.body.email?.toLowerCase().trim();
+    const { purpose } = req.body;
+
+    if (!email || !purpose) {
+      return res.status(400).json({ message: "Email and purpose required" });
+    }
+
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    const otpExpiry = Date.now() + 10 * 60 * 1000;
+
+    // REGISTER FLOW -> PendingUser
+    if (purpose === "register") {
+      const pending = await PendingUser.findOne({ email });
+      if (!pending) {
+        return res.status(404).json({
+          message: "No pending registration found. Please register first.",
+        });
+      }
+      pending.otp = otp;
+      pending.otpExpiry = otpExpiry;
+      await pending.save();
+
+      await sendOtpEmail(email, otp);
+      return res.json({ message: "OTP resent to email" });
+    }
+
+    // FORGOT PASSWORD FLOW -> User
+    if (purpose === "forgot") {
+      const user = await User.findOne({ email }).select("+otp +otpExpiry");
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      user.otp = otp;
+      user.otpExpiry = otpExpiry;
+      await user.save();
+
+      await sendOtpEmail(email, otp, "reset");
+      return res.json({ message: "OTP resent to email" });
+    }
+
+    // CHANGE EMAIL FLOW -> User (verifying new email)
+    if (purpose === "changeEmail") {
+      const user = await User.findOne({ email }).select("+otp +otpExpiry");
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      user.otp = otp;
+      user.otpExpiry = otpExpiry;
+      await user.save();
+
+      await sendOtpEmail(email, otp, "resetEmail");
+      return res.json({ message: "OTP resent to email" });
+    }
+
+    return res.status(400).json({ message: "Invalid purpose" });
+  } catch (e) {
+    console.error("Resend OTP error:", e);
+    res.status(500).json({ error: e.message });
+  }
+};

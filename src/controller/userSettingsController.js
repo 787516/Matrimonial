@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import sendOtpEmail from "../utils/sendOtp.js";
 import validator from "validator";
 import crypto from "crypto";
+
 /**
  * ✅ Request Email Change (Send OTP to new email)
  */
@@ -373,31 +374,51 @@ export const verifyEmailChange = async (req, res) => {
 export const updatePassword = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { newPassword } = req.body;
+    const { currentPassword, newPassword } = req.body;
 
-    // Validate new password
+    // Basic presence checks
+    if (!currentPassword) {
+      return res.status(400).json({ message: "Current password is required." });
+    }
     if (!newPassword) {
       return res.status(400).json({ message: "New password is required." });
     }
 
-    if (newPassword.length < 6) {
-      return res
-        .status(400)
-        .json({ message: "New password must be at least 6 characters long" });
+    // Example: enforce your password rules (6-15 chars, upper, lower, digit, special)
+    const pwRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#\$%\^&\*]).{6,15}$/;
+    if (!pwRegex.test(newPassword)) {
+      return res.status(400).json({
+        message:
+          "New password must be 6-15 chars and include uppercase, lowercase, number and special char.",
+      });
     }
 
-    // Find user
+    // Find user (include password hash)
     const user = await User.findById(userId).select("+password");
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) return res.status(404).json({ message: "User not found." });
 
-    // Hash and save
+    // Verify current password
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Current password is incorrect." });
+    }
+
+    // Optional: prevent reusing same password
+    const isSame = await bcrypt.compare(newPassword, user.password);
+    if (isSame) {
+      return res
+        .status(400)
+        .json({ message: "New password must be different from the current password." });
+    }
+
+    // Hash and save new password
     user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
 
-    res.json({ message: "Password updated successfully." });
+    return res.json({ message: "Password updated successfully." });
   } catch (err) {
     console.error("❌ Update password error:", err);
-    res.status(500).json({ error: "Failed to update password." });
+    return res.status(500).json({ error: "Failed to update password." });
   }
 };
 
