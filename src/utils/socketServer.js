@@ -129,15 +129,15 @@ export const initializeSocket = (server) => {
         // Ensure sender socket is in the room before emitting
         try {
           socket.join(String(chatRoom._id));
-          console.log(
-            `Socket ${socket.id} (sender:${senderId}) joined room ${chatRoom._id} before emit`
-          );
+          // console.log(
+          //   `Socket ${socket.id} (sender:${senderId}) joined room ${chatRoom._id} before emit`
+          // );
         } catch (err) {
           console.error("join before emit error:", err);
         }
 
         // Emit to room using ChatRoom._id
-        console.log(`Emitting message ${newMsg._id} to room ${chatRoom._id}`);
+        //console.log(`Emitting message ${newMsg._id} to room ${chatRoom._id}`);
         io.to(String(chatRoom._id)).emit("messageReceived", payload);
 
         // Acknowledge to sender with saved message

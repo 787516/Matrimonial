@@ -132,7 +132,10 @@ export const getMessages = async (req, res) => {
         .json({ message: "You are not allowed to view this chat" });
     }
 
-    const messages = await Message.find({ chatRoomId: room._id })
+   const messages = await Message.find({
+  chatRoomId: room._id,
+  deletedFor: { $ne: userId }, // hide messages deleted for this user
+})
       .sort({ createdAt: 1 })
       .populate("senderId", "firstName lastName")
       .lean();
@@ -256,10 +259,11 @@ export const getChatList = async (req, res) => {
 //   }
 // };
 
-
 export const deleteMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
+    const { type } = req.query; // "me" or "everyone"
+    
     const userId = req.user._id;
 
     const msg = await Message.findById(messageId);
@@ -267,19 +271,38 @@ export const deleteMessage = async (req, res) => {
       return res.status(404).json({ message: "Message not found" });
     }
 
-    if (msg.senderId.toString() !== userId.toString()) {
-      return res.status(403).json({ message: "Not allowed" });
+    // 🔹 DELETE FOR EVERYONE
+    if (type === "everyone") {
+      if (msg.senderId.toString() !== userId.toString()) {
+        return res.status(403).json({ message: "Not allowed" });
+      }
+
+      msg.isDeletedForEveryone = true;
+      msg.message = "This message was deleted";
+      await msg.save();
+
+      // 🔥 Emit live update
+      const io = getIO();
+      io.to(String(msg.chatRoomId)).emit("messageUpdated", {
+        messageId: msg._id,
+        isDeletedForEveryone: true,
+        message: "This message was deleted",
+      });
+
+      return res.json({ message: "Deleted for everyone" });
     }
 
-    await Message.findByIdAndDelete(messageId);
+    // 🔹 DELETE FOR ME
+    if (type === "me") {
+      await Message.findByIdAndUpdate(messageId, {
+        $addToSet: { deletedFor: userId },
+      });
 
-    // ✅ LIVE DELETE
-    const io = getIO();
-    io.to(String(msg.chatRoomId)).emit("messageDeleted", {
-      messageId,
-    });
+      return res.json({ message: "Deleted for you" });
+    }
 
-    res.json({ message: "Message deleted" });
+    res.status(400).json({ message: "Invalid delete type" });
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

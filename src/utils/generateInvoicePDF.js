@@ -9,7 +9,6 @@ const generateInvoicePDF = (data, res) => {
     "Content-Disposition",
     `attachment; filename=${data.invoiceNumber}.pdf`
   );
-
   doc.pipe(res);
 
   /* =========================
@@ -18,7 +17,7 @@ const generateInvoicePDF = (data, res) => {
   doc
     .fontSize(22)
     .fillColor("#d92332")
-    .text("Matrimony App", { align: "center" });
+    .text("SnehaBandh", { align: "center" });
 
   doc
     .moveDown(0.5)
@@ -34,20 +33,25 @@ const generateInvoicePDF = (data, res) => {
   const leftX = 50;
   const rightX = 330;
   const startY = doc.y;
-
   doc.fontSize(10).fillColor("#000");
-
-  // Left column
+  // Left Column
   doc.text(`Invoice No: ${data.invoiceNumber}`, leftX, startY);
   doc.text(`Invoice Date: ${data.invoiceDate}`, leftX, startY + 15);
   doc.text(`Payment ID: ${data.paymentId}`, leftX, startY + 30);
-
   // Right column
-  doc.text(`Billed To: ${data.name}`, rightX, startY);
-  doc.text(`Email: ${data.email || "-"}`, rightX, startY + 15);
+  // doc.text(`Billed To: ${data.name}`, rightX, startY);
+  // doc.text(`Email: ${data.email || "-"}`, rightX, startY + 15);
+  const formattedName = data.name
+  ? data.name.charAt(0).toUpperCase() + data.name.slice(1)
+  : "User";
+
+doc.text(`Billed To: ${formattedName}`, rightX, startY);
+
+  // doc.text(`Billed To: ${data.name}`, rightX, startY);
+doc.text(`Email: ${data.email || "-"}`, rightX, startY + 15);
 
   doc.moveDown(4);
-
+  console.log("email pdf",data.email);
   // Divider
   doc
     .moveTo(50, doc.y)
@@ -66,36 +70,53 @@ const generateInvoicePDF = (data, res) => {
   doc.fontSize(11);
   doc.text(`Plan: ${data.planName}`);
   doc.text(`Subscription Period: ${data.startDate} → ${data.endDate}`);
-
   doc.moveDown(2);
-
+ 
   /* =========================
      AMOUNT SUMMARY (BOX)
   ========================== */
-  const boxTop = doc.y;
-  const boxHeight = 90;
+/* =========================
+   AMOUNT SUMMARY (BOX)
+========================== */
 
-  doc
-    .rect(50, boxTop, 500, boxHeight)
-    .stroke("#dddddd");
+const boxTop = doc.y;
+const boxHeight = 90;
 
-  doc.fontSize(11).fillColor("#000");
+doc
+  .rect(50, boxTop, 500, boxHeight)
+  .stroke("#dddddd");
 
-  doc.text(`Base Amount`, 70, boxTop + 15);
-  doc.text(`₹ ${data.baseAmount}`, 400, boxTop + 15, { align: "right" });
+const labelX = 70;
+const valueX = 50;
+const valueWidth = 500;
 
-  doc.text(`GST (18%)`, 70, boxTop + 35);
-  doc.text(`₹ ${data.taxAmount}`, 400, boxTop + 35, { align: "right" });
+doc.fontSize(11);
 
-  doc
-    .fontSize(12)
-    .text(`Total Paid`, 70, boxTop + 60);
+// Base Amount
+doc.text("Base Amount", labelX, boxTop + 15);
+doc.text(`₹ ${data.baseAmount}`, valueX, boxTop + 15, {
+  width: valueWidth - 20,
+  align: "right"
+});
 
-  doc
-    .fontSize(12)
-    .text(`₹ ${data.amount}`, 400, boxTop + 60, { align: "right" });
+// GST
+doc.text("GST (18%)", labelX, boxTop + 35);
+doc.text(`₹ ${data.taxAmount}`, valueX, boxTop + 35, {
+  width: valueWidth - 20,
+  align: "right"
+});
 
-  doc.moveDown(4);
+// Total Paid
+doc.fontSize(12).font("Helvetica-Bold");
+doc.text("Total Paid", labelX, boxTop + 60);
+doc.text(`₹ ${data.amount}`, valueX, boxTop + 60, {
+  width: valueWidth - 20,
+  align: "right"
+});
+
+doc.font("Helvetica"); // reset font
+
+doc.moveDown(4);
 
   /* =========================
      TAX NOTE
@@ -110,11 +131,11 @@ const generateInvoicePDF = (data, res) => {
   /* =========================
      SELLER DETAILS
   ========================== */
-  doc.fontSize(10).fillColor("#000").text("Seller Details");
+  // doc.fontSize(10).fillColor("#000").text("Seller Details");
   doc.moveDown(0.5);
 
   doc.fontSize(9);
-  doc.text("Matrimony App");
+  doc.text("SnehaBandh");
   doc.text("Email: support@matrimonyapp.com");
   doc.text("GSTIN: 27XXXXXXXXXX1Z5");
 
@@ -130,7 +151,6 @@ const generateInvoicePDF = (data, res) => {
       "This is a system-generated invoice. No signature required.",
       { align: "center" }
     );
-
   doc.end();
 };
 

@@ -16,7 +16,8 @@ export const downloadInvoice = async (req, res) => {
     const subscription = await UserSubscription.findOne({
       userId: req.user._id,
       status: "Active",
-    }).populate("planId");
+    }).populate("planId")
+      .populate("userId");
 
     if (!subscription) {
       return res.status(404).json({ message: "Subscription not found" });
@@ -51,8 +52,8 @@ export const downloadInvoice = async (req, res) => {
         invoiceNumber,
         invoiceDate: invoiceDate.toDateString(),
         paymentId: subscription.paymentId,
-        name: req.user.firstName || "User",
-        email: req.user.email,
+        name: subscription.userId.firstName || "User",
+        email: subscription.userId.email || "-",
         planName: subscription.planId.name,
         startDate: subscription.startDate.toDateString(),
         endDate: subscription.endDate.toDateString(),
