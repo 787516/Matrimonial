@@ -79,7 +79,7 @@ export const getMatchFeed = async (req, res) => {
 
     // Apply gender filter
     let validProfiles = allCandidates.filter(
-      (p) => p.userId?.gender?.toLowerCase() === oppositeGender
+      (p) => p.userId?.gender?.toLowerCase() === oppositeGender,
     );
 
     // 2️⃣ Apply OTHER USER's PARTNER preference (as filter)
@@ -150,7 +150,7 @@ export const getMatchFeed = async (req, res) => {
     const sentSet = new Set(sent.map((x) => x.receiverId.toString()));
     const receivedSet = new Set(received.map((x) => x.senderId.toString()));
     const blockedPairs = new Set(
-      blocked.map((x) => `${x.senderId.toString()}-${x.receiverId.toString()}`)
+      blocked.map((x) => `${x.senderId.toString()}-${x.receiverId.toString()}`),
     );
 
     // Attach metadata & profilePhoto placeholder
@@ -275,7 +275,7 @@ export const getMatchFeed = async (req, res) => {
     const religionMatches = scoredProfiles.filter(
       (p) =>
         !used.has(p._id.toString()) &&
-        equalsCI(p.religion, currentProfile.religion)
+        equalsCI(p.religion, currentProfile.religion),
     );
 
     religionMatches.forEach((m) => used.add(m._id.toString()));
@@ -285,30 +285,30 @@ export const getMatchFeed = async (req, res) => {
       (p) =>
         !used.has(p._id.toString()) &&
         (equalsCI(p.city, currentProfile.city) ||
-          equalsCI(p.state, currentProfile.state))
+          equalsCI(p.state, currentProfile.state)),
     );
 
     locationMatches.forEach((m) => used.add(m._id.toString()));
 
     // fallback: everything else not used
     const fallbackMatches = scoredProfiles.filter(
-      (p) => !used.has(p._id.toString())
+      (p) => !used.has(p._id.toString()),
     );
 
     // ---------------------------
     // Sort each category by matchPercentage DESC
     // ---------------------------
     perfectMatches.sort(
-      (a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0)
+      (a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0),
     );
     religionMatches.sort(
-      (a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0)
+      (a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0),
     );
     locationMatches.sort(
-      (a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0)
+      (a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0),
     );
     fallbackMatches.sort(
-      (a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0)
+      (a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0),
     );
 
     // 6️⃣ Apply pagination meta (we keep categories intact; page & totalPages returned)
@@ -387,7 +387,7 @@ export const getOppositeGenderProfiles = async (req, res) => {
     const profiles = await UserProfileDetail.find(match)
       .populate(
         "userId",
-        "firstName lastName profilePhoto gender email registrationId"
+        "firstName lastName profilePhoto gender email registrationId",
       )
       .sort({ createdAt: -1 }) // stable descending newest-first
       .skip(skip)
@@ -442,7 +442,6 @@ export const getOppositeGenderProfiles = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
 
 // 2️⃣ Send Interest
 export const sendInterest = async (req, res) => {
@@ -509,16 +508,14 @@ export const sendInterest = async (req, res) => {
     });
 
     // ✅ Log activity for receiver
-    const senderName = `${req.user.firstName || ""} ${
-      req.user.lastName || ""
-    }`.trim();
+    // Message should be verb-only; frontend will prefix actor's name
     await createActivity(
       receiverId,
       senderId,
       "InterestSent",
-      `${senderName} sent you an interest request`,
+      `sent you an interest request`,
       newRequest._id,
-      { requestType: "Interest" }
+      { requestType: "Interest" },
     );
 
     res.status(201).json({
@@ -580,16 +577,14 @@ export const sendChatRequest = async (req, res) => {
       type: "Chat",
     });
 
-    const senderName = `${req.user.firstName || ""} ${
-      req.user.lastName || ""
-    }`.trim();
+    // Use verb-only message; UI will render actor name separately
     await createActivity(
       receiverId,
       senderId,
       "ChatRequestReceived",
-      `${senderName} sent you a chat request`,
+      `sent you a chat request`,
       chatReq._id,
-      { requestType: "Chat" }
+      { requestType: "Chat" },
     );
 
     res.status(201).json({ message: "Chat request sent", chatReq });
@@ -655,7 +650,7 @@ export const viewProfile = async (req, res) => {
       // ✅ Safe increment AFTER all checks pass
       await User.updateOne(
         { _id: viewerId },
-        { $inc: { profileViewCount: 1 } }
+        { $inc: { profileViewCount: 1 } },
       );
     }
 
@@ -664,7 +659,7 @@ export const viewProfile = async (req, res) => {
     --------------------------------------------------*/
     const profile = await UserProfileDetail.findOne({ userId: id }).populate(
       "userId",
-      "firstName lastName gender email phone registrationId"
+      "firstName lastName gender email phone registrationId",
     );
 
     if (!profile) {
@@ -681,16 +676,11 @@ export const viewProfile = async (req, res) => {
     /* -------------------------------------------------
        🔔 ACTIVITY LOG (optional but clean)
     --------------------------------------------------*/
-    const viewerUser = await User.findById(viewerId).select(
-      "firstName lastName"
-    );
+    const viewerUser =
+      await User.findById(viewerId).select("firstName lastName");
 
-    await createActivity(
-      id,
-      viewerId,
-      "ProfileViewed",
-      `${viewerUser.firstName} ${viewerUser.lastName} viewed your profile`
-    );
+    // Store action text only; frontend will show actor name + this text
+    await createActivity(id, viewerId, "ProfileViewed", `viewed your profile`);
 
     /* -------------------------------------------------
        ✅ SUCCESS
@@ -944,9 +934,9 @@ export const unblockUser = async (req, res) => {
     // await MatchRequest.deleteOne({ _id: request._id });
 
     // optional: notify the other user
-    const unblockerName = `${req.user.firstName || ""} ${
-      req.user.lastName || ""
-    }`.trim();
+    // Use verb-only message
+    const unblockerName =
+      `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim();
     const otherIdToNotify =
       String(userId) === String(request.senderId)
         ? request.receiverId
@@ -956,9 +946,9 @@ export const unblockUser = async (req, res) => {
       otherIdToNotify,
       userId,
       "UserUnblocked",
-      `${unblockerName} unblocked you`,
+      `unblocked you`,
       request._id,
-      { requestType: "Interest" }
+      { requestType: "Interest" },
     );
 
     return res.json({
@@ -1077,8 +1067,8 @@ const buildDashboardList = async ({ userId, type, status, onlyChat }) => {
           ? receiver
           : sender
         : type === "received"
-        ? sender
-        : receiver;
+          ? sender
+          : receiver;
 
     if (!other || other === "undefined") continue;
 

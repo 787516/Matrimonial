@@ -53,6 +53,8 @@ export const downloadInvoice = async (req, res) => {
         invoiceDate: invoiceDate.toDateString(),
         paymentId: subscription.paymentId,
         name: subscription.userId.firstName || "User",
+        middleName: subscription.userId.middleName || "_",
+        lastName: subscription.userId.lastName || "-",
         email: subscription.userId.email || "-",
         planName: subscription.planId.name,
         startDate: subscription.startDate.toDateString(),

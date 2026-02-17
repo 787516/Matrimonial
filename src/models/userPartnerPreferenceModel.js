@@ -8,7 +8,6 @@ const preferenceSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-
     // BASIC
     maritalStatus: [{
       type: String,
@@ -88,7 +87,6 @@ const preferenceSchema = new mongoose.Schema(
         "Konkani", "Bhojpuri", "Rajasthani", "Haryanvi", "Other"
       ]
     },
-
     // CAREER
     education: {
       type: String,
